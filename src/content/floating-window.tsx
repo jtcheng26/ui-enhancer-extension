@@ -1,0 +1,184 @@
+import {
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+
+import type { SelectedElement } from "../types";
+import { PopupApp } from "../popup/PopupApp";
+
+interface FloatingWindowProps {
+  selectedElement: SelectedElement | null;
+  onClose: () => void;
+}
+
+const DEFAULT_POSITION = { x: 24, y: 24 };
+const DEFAULT_SIZE = { width: 440, height: 700 };
+const MIN_SIZE = { width: 320, height: 320 };
+
+type ResizeEdge = "e" | "s" | "se" | null;
+
+export function FloatingWindow({
+  selectedElement,
+  onClose,
+}: FloatingWindowProps) {
+  const [position, setPosition] = useState(DEFAULT_POSITION);
+  const [size, setSize] = useState(DEFAULT_SIZE);
+
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const resizeRef = useRef<{
+    edge: ResizeEdge;
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+  } | null>(null);
+
+  // ── Drag ────────────────────────────────────────────────────────────────────
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if ((event.target as HTMLElement).closest("button")) return;
+
+    dragOffsetRef.current = {
+      x: event.clientX - position.x,
+      y: event.clientY - position.y,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+
+    setPosition({
+      x: Math.max(12, event.clientX - dragOffsetRef.current.x),
+      y: Math.max(12, event.clientY - dragOffsetRef.current.y),
+    });
+  }
+
+  function handlePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  // ── Resize ───────────────────────────────────────────────────────────────────
+
+  function handleResizePointerDown(
+    edge: ResizeEdge,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    event.stopPropagation();
+    resizeRef.current = {
+      edge,
+      startX: event.clientX,
+      startY: event.clientY,
+      startW: size.width,
+      startH: size.height,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleResizePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (
+      !event.currentTarget.hasPointerCapture(event.pointerId) ||
+      !resizeRef.current
+    )
+      return;
+
+    const { edge, startX, startY, startW, startH } = resizeRef.current;
+    const dx = event.clientX - startX;
+    const dy = event.clientY - startY;
+
+    setSize({
+      width:
+        edge === "e" || edge === "se"
+          ? Math.max(MIN_SIZE.width, startW + dx)
+          : size.width,
+      height:
+        edge === "s" || edge === "se"
+          ? Math.max(MIN_SIZE.height, startH + dy)
+          : size.height,
+    });
+  }
+
+  function handleResizePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    resizeRef.current = null;
+  }
+
+  // ── Shared resize handle props ───────────────────────────────────────────────
+
+  function resizeHandleProps(edge: ResizeEdge) {
+    return {
+      onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) =>
+        handleResizePointerDown(edge, e),
+      onPointerMove: handleResizePointerMove,
+      onPointerUp: handleResizePointerUp,
+    };
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
+  return (
+    <div
+      className="fixed left-0 top-0 z-[2147483647]"
+      style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
+    >
+      {/* Blurred border shell */}
+      <div
+        className="rounded-[30px] bg-slate-900/20 p-[6px] backdrop-blur-md shadow-[0_24px_60px_rgba(15,23,42,0.28)]"
+        style={{ width: size.width, height: size.height }}
+      >
+        {/* Actual panel */}
+        <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[28px] bg-white">
+          {/* ── Header / drag handle ── */}
+          <div
+            className="flex shrink-0 cursor-move items-center justify-between border-b border-slate-200/80 bg-slate-950 px-4 py-3 text-white"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+          >
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-200">
+                Workspace
+              </p>
+            </div>
+
+            <button
+              className="z-100 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-lg leading-none text-white transition hover:bg-white/20"
+              type="button"
+              onClick={onClose}
+            >
+              ×
+            </button>
+          </div>
+
+          {/* ── Scrollable content ── */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <PopupApp
+              mode="floating"
+              selectedElement={selectedElement}
+              onRequestClose={onClose}
+            />
+          </div>
+
+          {/* Resize handles */}
+          <div
+            className="absolute right-0 top-0 h-full w-2 cursor-ew-resize"
+            {...resizeHandleProps("e")}
+          />
+          <div
+            className="absolute bottom-0 left-0 h-2 w-full cursor-s-resize"
+            {...resizeHandleProps("s")}
+          />
+          <div
+            className="absolute bottom-0 right-0 h-4 w-4 cursor-se-resize"
+            {...resizeHandleProps("se")}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

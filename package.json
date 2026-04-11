@@ -1,6 +1,6 @@
 {
-  "name": "vibe-ui",
-  "description": "Description",
+  "name": "ai-ui-augmentation-prototype",
+  "description": "Experimental AI-powered UI augmentation browser extension scaffold built with WXT.",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,16 +12,20 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
+    "@radix-ui/react-collapsible": "^1.1.12",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@wxt-dev/module-react": "^1.1.5",
+    "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
     "wxt": "^0.20.20"
   }

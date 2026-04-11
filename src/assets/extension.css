@@ -1,0 +1,287 @@
+:root {
+  color: #1d2330;
+  background:
+    radial-gradient(circle at top left, #f7f0d8 0%, transparent 36%),
+    radial-gradient(circle at bottom right, #dcecff 0%, transparent 38%),
+    #f5f1e8;
+  font-family:
+    'IBM Plex Sans',
+    'Avenir Next',
+    'Segoe UI',
+    sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.aui-surface {
+  min-width: 360px;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.aui-surface--popup {
+  width: 420px;
+}
+
+.aui-surface--sidepanel {
+  width: 100%;
+  max-width: 720px;
+}
+
+.aui-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(29, 35, 48, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 250, 241, 0.92);
+  box-shadow: 0 18px 40px rgba(50, 50, 93, 0.08);
+}
+
+.aui-panel__header {
+  display: grid;
+  gap: 8px;
+}
+
+.aui-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #865f2d;
+}
+
+.aui-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.aui-copy,
+.aui-muted {
+  margin: 0;
+  color: #536072;
+}
+
+.aui-field {
+  display: grid;
+  gap: 8px;
+}
+
+.aui-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.aui-textarea,
+.aui-input {
+  width: 100%;
+  border: 1px solid rgba(29, 35, 48, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1d2330;
+}
+
+.aui-textarea {
+  min-height: 120px;
+  padding: 12px 14px;
+  resize: vertical;
+}
+
+.aui-input {
+  padding: 10px 12px;
+}
+
+.aui-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.aui-button {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: #1d2330;
+  color: #f7f3ea;
+  transition:
+    transform 150ms ease,
+    opacity 150ms ease;
+}
+
+.aui-button:hover {
+  transform: translateY(-1px);
+}
+
+.aui-button:disabled {
+  opacity: 0.55;
+  transform: none;
+}
+
+.aui-button--secondary {
+  background: #d7e3f4;
+  color: #1d2330;
+}
+
+.aui-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.aui-card {
+  padding: 14px;
+  border: 1px solid rgba(29, 35, 48, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.aui-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.aui-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: #efe0bc;
+  color: #69451f;
+}
+
+.aui-history {
+  display: grid;
+  gap: 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.aui-history__item {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(215, 227, 244, 0.42);
+}
+
+.aui-history__prompt {
+  margin: 0;
+  font-size: 13px;
+  color: #1d2330;
+}
+
+.aui-history__meta {
+  font-size: 11px;
+  color: #536072;
+}
+
+.aui-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.aui-content-highlight,
+.aui-content-selection,
+.aui-injected-placeholder {
+  all: initial;
+  box-sizing: border-box;
+  pointer-events: none;
+  position: fixed;
+  z-index: 2147483646;
+}
+
+.aui-content-highlight,
+.aui-content-selection {
+  border-radius: 8px;
+  transition:
+    transform 80ms ease,
+    width 80ms ease,
+    height 80ms ease;
+}
+
+.aui-content-highlight {
+  border: 2px solid rgba(73, 132, 255, 0.95);
+  background: rgba(73, 132, 255, 0.12);
+}
+
+.aui-content-selection {
+  border: 2px solid rgba(255, 117, 47, 0.95);
+  background: rgba(255, 117, 47, 0.12);
+}
+
+.aui-injected-placeholder {
+  right: 16px;
+  bottom: 16px;
+  max-width: 280px;
+  padding: 12px 14px;
+  border: 1px solid rgba(29, 35, 48, 0.16);
+  border-radius: 16px;
+  background: rgba(255, 250, 241, 0.96);
+  box-shadow: 0 16px 36px rgba(50, 50, 93, 0.16);
+  color: #1d2330;
+  font-family:
+    'IBM Plex Sans',
+    'Avenir Next',
+    'Segoe UI',
+    sans-serif;
+}
+
+.aui-injected-placeholder__title {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #865f2d;
+}
+
+.aui-injected-placeholder__copy {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+@media (max-width: 640px) {
+  .aui-surface {
+    min-width: 320px;
+    padding: 12px;
+  }
+
+  .aui-title {
+    font-size: 21px;
+  }
+}
