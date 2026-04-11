@@ -1,14 +1,14 @@
-import type { ContentScriptContext } from '#imports';
+import type { ContentScriptContext } from "#imports";
 
-import type { ExtensionRuntimeMessage } from '../types';
-import { settingsStore } from '../storage/settings-store';
-import { AugmentationEngine } from '../services/augmentation-engine';
-import { logger } from '../utils/logger';
-import { ClickSelectController } from './click-select';
-import { FloatingPopupController } from './floating-popup-controller';
-import { HoverHighlighter } from './hover-highlighter';
-import { SelectionOverlayRenderer } from './selection-overlay';
-import { SelectionStateManager } from './selection-state';
+import type { ExtensionRuntimeMessage } from "../types";
+import { settingsStore } from "../storage/settings-store";
+import { AugmentationEngine } from "../services/augmentation-engine";
+import { logger } from "../utils/logger";
+import { ClickSelectController } from "./click-select";
+import { FloatingPopupController } from "./floating-popup-controller";
+import { HoverHighlighter } from "./hover-highlighter";
+import { SelectionOverlayRenderer } from "./selection-overlay";
+import { SelectionStateManager } from "./selection-state";
 
 export async function initializeContentPrototype(ctx: ContentScriptContext) {
   const settings = await settingsStore.get();
@@ -20,7 +20,7 @@ export async function initializeContentPrototype(ctx: ContentScriptContext) {
   const highlighter = new HoverHighlighter({
     overlay,
     onHover(selectedElement) {
-      logger.info('Hovered element placeholder event.', {
+      logger.info("Hovered element placeholder event.", {
         selector: selectedElement.selector,
       });
     },
@@ -30,7 +30,7 @@ export async function initializeContentPrototype(ctx: ContentScriptContext) {
     overlay,
     state,
     onSelect(selectedElement) {
-      logger.info('Selected element placeholder event.', selectedElement);
+      logger.info("Selected element placeholder event.", selectedElement);
       void floatingPopup.open({
         selectedElement,
       });
@@ -38,13 +38,13 @@ export async function initializeContentPrototype(ctx: ContentScriptContext) {
   });
 
   const handleRuntimeMessage = (message: ExtensionRuntimeMessage) => {
-    if (message.type === 'floating-ui/open') {
+    if (message.type === "floating-ui/open") {
       void floatingPopup.open({
         selectedElement: message.payload?.selectedElement ?? null,
       });
     }
 
-    if (message.type === 'floating-ui/close') {
+    if (message.type === "floating-ui/close") {
       floatingPopup.close();
     }
   };
@@ -52,7 +52,7 @@ export async function initializeContentPrototype(ctx: ContentScriptContext) {
   browser.runtime.onMessage.addListener(handleRuntimeMessage);
 
   state.subscribe((selectedElement) => {
-    logger.info('Selection state changed.', selectedElement);
+    logger.info("Selection state changed.", selectedElement);
   });
 
   const applyInteractionSettings = (nextSettings: typeof settings) => {
@@ -73,8 +73,7 @@ export async function initializeContentPrototype(ctx: ContentScriptContext) {
 
   const unsubscribeFromSettings = settingsStore.subscribe((nextSettings) => {
     applyInteractionSettings(nextSettings);
-    logger.info('Updated content interaction settings from popup.', {
-      selectionModeEnabled: nextSettings.selectionModeEnabled,
+    logger.info("Updated content interaction settings from popup.", {
       selectionModeEnabled: nextSettings.selectionModeEnabled,
     });
   });
@@ -83,7 +82,7 @@ export async function initializeContentPrototype(ctx: ContentScriptContext) {
     augmentationEngine.injectPlaceholderCard();
   }
 
-  logger.info('Content prototype initialized.', {
+  logger.info("Content prototype initialized.", {
     pageUrl: window.location.href,
     settings,
   });

@@ -3,13 +3,13 @@ import type {
   ExtensionSettings,
   ParsedSchema,
   StoredAugmentationConfig,
-} from '../types';
+} from "../types";
 
 export const STORAGE_KEYS = {
-  augmentationConfigs: 'augmentationConfigs',
-  settings: 'settings',
-  parsedSchemas: 'parsedSchemas',
-  requestHistory: 'requestHistory',
+  augmentationConfigs: "augmentationConfigs",
+  settings: "settings",
+  parsedSchemas: "parsedSchemas",
+  requestHistory: "requestHistory",
 } as const;
 
 export interface StorageShape {
@@ -21,7 +21,6 @@ export interface StorageShape {
 
 export const DEFAULT_SETTINGS: ExtensionSettings = {
   selectionModeEnabled: false,
-  selectionModeEnabled: false,
-  injectDemoCardOnLoad: true,
-  customSchemaUrl: '',
+  injectDemoCardOnLoad: false,
+  customSchemaUrl: "",
 };

@@ -20,24 +20,24 @@ export interface AugmentationRequest {
   id: string;
   prompt: string;
   createdAt: string;
-  source: 'popup' | 'sidepanel' | 'content';
-  status: 'draft' | 'queued' | 'mock-submitted';
+  source: "popup" | "sidepanel" | "content";
+  status: "draft" | "queued" | "mock-submitted";
   selectedElementId?: string;
 }
 
 export interface InjectedAugmentation {
   id: string;
-  kind: 'placeholder-card' | 'button' | 'overlay';
+  kind: "placeholder-card" | "button" | "overlay";
   label: string;
   containerId: string;
   createdAt: string;
-  status: 'injected' | 'removed';
+  status: "injected" | "removed";
 }
 
 export interface ParsedSchema {
   id: string;
   sourceUrl: string;
-  format: 'json' | 'yaml' | 'unknown';
+  format: "json" | "yaml" | "unknown";
   title?: string;
   version?: string;
   document: unknown;
@@ -59,7 +59,6 @@ export interface StoredAugmentationConfig {
 
 export interface ExtensionSettings {
   selectionModeEnabled: boolean;
-  selectionModeEnabled: boolean;
   injectDemoCardOnLoad: boolean;
   customSchemaUrl: string;
   lastCommand?: string;
@@ -67,7 +66,7 @@ export interface ExtensionSettings {
 
 export interface SchemaDiscoveryCandidate {
   url: string;
-  source: 'default' | 'custom';
+  source: "default" | "custom";
 }
 
 export interface SchemaDiscoveryOptions {
@@ -84,26 +83,26 @@ export interface SchemaDiscoveryResult {
 
 export type ExtensionRuntimeMessage =
   | {
-      type: 'command/submit';
+      type: "command/submit";
       payload: AugmentationRequest;
     }
   | {
-      type: 'schema/discover';
+      type: "schema/discover";
       payload: SchemaDiscoveryOptions;
     }
   | {
-      type: 'selection/toggle';
+      type: "selection/toggle";
       payload: {
         enabled: boolean;
       };
     }
   | {
-      type: 'floating-ui/open';
+      type: "floating-ui/open";
       payload?: {
-        source: 'selection' | 'toolbar';
+        source: "selection" | "toolbar";
         selectedElement?: SelectedElement | null;
       };
     }
   | {
-      type: 'floating-ui/close';
+      type: "floating-ui/close";
     };
