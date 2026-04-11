@@ -1,6 +1,25 @@
 import { defineConfig } from "wxt";
 import tailwindcss from "@tailwindcss/vite";
 
+function disableZodEvalPlugin() {
+  return {
+    name: "disable-zod-eval",
+    enforce: "pre" as const,
+    transform(code: string, id: string) {
+      if (!id.includes("/node_modules/zod/v4/core/util")) return null;
+      if (!code.includes('new F("")')) return null;
+
+      return {
+        code: code.replace(
+          /try\s*\{\s*const F = Function;\s*new F\(""\);\s*return true;\s*\}\s*catch\s*\(_\)\s*\{\s*return false;\s*\}/g,
+          "return false;",
+        ),
+        map: null,
+      };
+    },
+  };
+}
+
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   srcDir: "src",
@@ -16,6 +35,6 @@ export default defineConfig({
     },
   },
   vite: () => ({
-    plugins: [tailwindcss()],
+    plugins: [tailwindcss(), disableZodEvalPlugin()],
   }),
 });

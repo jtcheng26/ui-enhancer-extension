@@ -3,6 +3,7 @@ import { requestStore } from "../storage/request-store";
 import { settingsStore } from "../storage/settings-store";
 import { logger } from "../utils/logger";
 import { inspectSelectedDomTree } from "./dom-inspection-service";
+import { DOMExtractorSpec } from "./dom-extractor";
 
 interface SubmitAugmentationRequestOptions {
   selectedElement?: SelectedElement | null;
@@ -12,7 +13,7 @@ export async function submitAugmentationRequest(
   prompt: string,
   source: AugmentationRequest["source"],
   options: SubmitAugmentationRequestOptions = {},
-): Promise<AugmentationRequest> {
+): Promise<DOMExtractorSpec | null> {
   const domTreeSnapshot = inspectSelectedDomTree(
     options.selectedElement ?? null,
   );
@@ -37,9 +38,15 @@ export async function submitAugmentationRequest(
     domTreeSnapshot,
   });
 
-  await browser.runtime.sendMessage({
+  const res = await browser.runtime.sendMessage({
     type: "command/submit",
     payload: request,
   });
-  return request;
+
+  // const res = null;
+
+  console.log(res);
+
+  if (!res || !res?.data) logger.error("Failed to return spec.");
+  return res?.data ?? null;
 }

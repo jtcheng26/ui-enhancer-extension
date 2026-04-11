@@ -11,6 +11,7 @@ import type {
   SchemaDiscoveryResult,
   SelectedElement,
 } from "../../types";
+import { validateAndParse } from "@/services/dom-extractor";
 
 interface CommandPanelProps {
   surface: "popup" | "sidepanel";
@@ -84,12 +85,16 @@ export function CommandPanel({
     }
 
     setIsSubmitting(true);
-    const request = await submitAugmentationRequest(prompt, surface, {
+    const res = await submitAugmentationRequest(prompt, surface, {
       selectedElement,
     });
-    const storedHistory = await requestStore.list();
-    setHistory(storedHistory);
-    setPrompt(request.prompt);
+    if (res) {
+      const stuff = validateAndParse(res);
+      logger.info("Selected data", stuff);
+    }
+    // const storedHistory = await requestStore.list();
+    // setHistory(storedHistory);
+    // setPrompt(request.prompt);
     setIsSubmitting(false);
   }
 

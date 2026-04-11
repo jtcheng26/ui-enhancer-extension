@@ -16,9 +16,12 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.52",
     "@radix-ui/react-collapsible": "^1.1.12",
+    "ai": "^6.0.158",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",

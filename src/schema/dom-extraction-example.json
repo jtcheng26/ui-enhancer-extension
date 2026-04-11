@@ -1,0 +1,161 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DOMExtractorSpec",
+  "version": "1.0.0",
+  "description": "Declarative spec for extracting typed data from a DOM tree. Compiled into a safe extractor function.",
+
+  "root": {
+    "selector": "#right-side-wrapper",
+    "required": false,
+    "output": "CanvasSidebar"
+  },
+
+  "types": {
+    "CanvasSidebar": {
+      "todoItems": { "type": "array", "items": "TodoItem" },
+      "showAllTodosVisible": { "type": "boolean" },
+      "recentFeedback": { "type": "array", "items": "RecentFeedbackItem" },
+      "hasRecentFeedback": { "type": "boolean" },
+      "canStartNewCourse": { "type": "boolean" },
+      "viewGradesHref": { "type": "string", "nullable": true }
+    },
+    "TodoItem": {
+      "type": { "type": "string" },
+      "title": { "type": "string" },
+      "points": { "type": "string", "nullable": true },
+      "dueDate": { "type": "string", "nullable": true }
+    },
+    "RecentFeedbackItem": {
+      "text": { "type": "string" }
+    }
+  },
+
+  "extractors": {
+    "CanvasSidebar": {
+      "todoItems": {
+        "op": "queryAll",
+        "selectors": [
+          "#planner-todosidebar-item-list > li",
+          "[data-testid='ToDoSidebar'] ul > li",
+          ".Sidebar__TodoListContainer ul > li"
+        ],
+        "map": "TodoItem"
+      },
+
+      "showAllTodosVisible": {
+        "op": "exists",
+        "selectors": [
+          "[data-testid='ToDoSidebar'] [class*='css-n5p8o3']",
+          "[data-testid='ToDoSidebar'] a",
+          "[data-testid='ToDoSidebar'] button"
+        ],
+        "filter": {
+          "textMatches": "(?i)show all"
+        }
+      },
+
+      "recentFeedback": {
+        "op": "queryAll",
+        "selectors": [
+          ".events_list.recent_feedback ul.right-side-list > li",
+          ".recent_feedback ul > li"
+        ],
+        "map": "RecentFeedbackItem",
+        "postProcess": {
+          "filterOut": {
+            "textMatches": "(?i)^nothing for now$"
+          }
+        }
+      },
+
+      "hasRecentFeedback": {
+        "op": "derive",
+        "from": "recentFeedback",
+        "fn": "arrayNotEmpty"
+      },
+
+      "canStartNewCourse": {
+        "op": "exists",
+        "selectors": ["#start_new_course", "[aria-controls='new_course_form']"]
+      },
+
+      "viewGradesHref": {
+        "op": "attr",
+        "selectors": ["a[href='/grades']", "a[href*='grades']"],
+        "attr": "href",
+        "fallback": null
+      }
+    },
+
+    "TodoItem": {
+      "type": {
+        "op": "text",
+        "selectors": [".screenreader-only", "[class*='label']"],
+        "transform": [
+          { "fn": "replace", "pattern": "(?i)dismiss", "with": "" },
+          { "fn": "trim" },
+          { "fn": "defaultIfEmpty", "value": "assignment" }
+        ]
+      },
+
+      "title": {
+        "op": "text",
+        "selectors": [
+          "a [class*='title']",
+          "[class*='PlannerItem__Title']",
+          "a"
+        ],
+        "fallback": {
+          "op": "textLines",
+          "pick": "first"
+        }
+      },
+
+      "points": {
+        "op": "text",
+        "selectors": [
+          "[class*='points']",
+          "[data-testid*='points']",
+          "[class*='Points']"
+        ],
+        "fallback": {
+          "op": "textRegex",
+          "pattern": "(\\d+\\s*points?)",
+          "flags": "i",
+          "group": 1
+        },
+        "nullable": true
+      },
+
+      "dueDate": {
+        "op": "first",
+        "branches": [
+          {
+            "op": "attr",
+            "selectors": ["time"],
+            "attr": "datetime"
+          },
+          {
+            "op": "text",
+            "selectors": ["time", "[class*='due']", "[data-testid*='date']"]
+          },
+          {
+            "op": "textRegex",
+            "pattern": "((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d+\\s+at\\s+\\d+:\\d+\\s*[ap]m)",
+            "flags": "i",
+            "group": 1
+          }
+        ],
+        "nullable": true
+      }
+    },
+
+    "RecentFeedbackItem": {
+      "text": {
+        "op": "text",
+        "selectors": ["*"],
+        "transform": [{ "fn": "trim" }]
+      }
+    }
+  }
+}

@@ -5,9 +5,17 @@ import type {
 } from "../types";
 import { logger } from "../utils/logger";
 
-const MAX_TREE_DEPTH = 4;
+const MAX_TREE_DEPTH = 15;
 const MAX_CHILDREN_PER_NODE = 25;
 const MAX_TEXT_PREVIEW_LENGTH = 140;
+
+function getOwnText(element: HTMLElement): string {
+  return Array.from(element.childNodes)
+    .filter((n): n is Text => n.nodeType === Node.TEXT_NODE)
+    .map((n) => n.textContent?.trim() || "")
+    .filter(Boolean)
+    .join(" ");
+}
 
 function mapAttributes(element: HTMLElement) {
   return Array.from(element.attributes).reduce<Record<string, string>>(
@@ -17,6 +25,12 @@ function mapAttributes(element: HTMLElement) {
     },
     {},
   );
+}
+
+function getTextPreview(element: HTMLElement): string {
+  const ownText = getOwnText(element);
+
+  return ownText.slice(0, MAX_TEXT_PREVIEW_LENGTH);
 }
 
 function serializeDomNode(
@@ -31,8 +45,7 @@ function serializeDomNode(
     return {
       tagName: element.tagName.toLowerCase(),
       attributes: mapAttributes(element),
-      textPreview:
-        element.textContent?.trim().slice(0, MAX_TEXT_PREVIEW_LENGTH) ?? "",
+      textPreview: getTextPreview(element),
       childCount: childElements.length,
       children: [],
       isTruncated: childElements.length > 0,
@@ -44,8 +57,7 @@ function serializeDomNode(
   return {
     tagName: element.tagName.toLowerCase(),
     attributes: mapAttributes(element),
-    textPreview:
-      element.textContent?.trim().slice(0, MAX_TEXT_PREVIEW_LENGTH) ?? "",
+    textPreview: getTextPreview(element),
     childCount: childElements.length,
     children: limitedChildren.map((child) =>
       serializeDomNode(child, currentDepth + 1),
@@ -103,5 +115,6 @@ export function inspectSelectedDomTree(
     "Stubbed DOM tree snapshot for augmentation request.",
     JSON.stringify(snapshot),
   );
+
   return snapshot;
 }
