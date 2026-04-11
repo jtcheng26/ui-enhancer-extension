@@ -16,13 +16,29 @@ export interface SelectedElement {
   selectedAt: string;
 }
 
+export interface JsonifiedDomNode {
+  tagName: string;
+  attributes: Record<string, string>;
+  textPreview: string;
+  childCount: number;
+  children: JsonifiedDomNode[];
+  isTruncated?: boolean;
+}
+
+export interface SelectedDomTreeSnapshot {
+  selectedElementId: string;
+  selector: string;
+  pageUrl: string;
+  tree: JsonifiedDomNode;
+}
+
 export interface AugmentationRequest {
   id: string;
   prompt: string;
   createdAt: string;
   source: "popup" | "sidepanel" | "content";
   status: "draft" | "queued" | "mock-submitted";
-  selectedElementId?: string;
+  snapshot?: SelectedDomTreeSnapshot;
 }
 
 export interface InjectedAugmentation {

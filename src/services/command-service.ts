@@ -1,18 +1,29 @@
-import type { AugmentationRequest } from '../types';
-import { requestStore } from '../storage/request-store';
-import { settingsStore } from '../storage/settings-store';
-import { logger } from '../utils/logger';
+import type { AugmentationRequest, SelectedElement } from "../types";
+import { requestStore } from "../storage/request-store";
+import { settingsStore } from "../storage/settings-store";
+import { logger } from "../utils/logger";
+import { inspectSelectedDomTree } from "./dom-inspection-service";
+
+interface SubmitAugmentationRequestOptions {
+  selectedElement?: SelectedElement | null;
+}
 
 export async function submitAugmentationRequest(
   prompt: string,
-  source: AugmentationRequest['source'],
+  source: AugmentationRequest["source"],
+  options: SubmitAugmentationRequestOptions = {},
 ): Promise<AugmentationRequest> {
+  const domTreeSnapshot = inspectSelectedDomTree(
+    options.selectedElement ?? null,
+  );
+
   const request: AugmentationRequest = {
     id: crypto.randomUUID(),
     prompt: prompt.trim(),
     createdAt: new Date().toISOString(),
     source,
-    status: 'mock-submitted',
+    status: "mock-submitted",
+    snapshot: domTreeSnapshot ?? undefined,
   };
 
   await requestStore.add(request);
@@ -21,8 +32,14 @@ export async function submitAugmentationRequest(
     lastCommand: request.prompt,
   });
 
-  logger.info('Stored mock augmentation request for future AI handling.', request);
+  logger.info("Stored mock augmentation request for future AI handling.", {
+    request,
+    domTreeSnapshot,
+  });
 
-  // TODO: Route requests through background messaging and real LLM orchestration.
+  await browser.runtime.sendMessage({
+    type: "command/submit",
+    payload: request,
+  });
   return request;
 }

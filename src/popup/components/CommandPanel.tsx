@@ -84,7 +84,9 @@ export function CommandPanel({
     }
 
     setIsSubmitting(true);
-    const request = await submitAugmentationRequest(prompt, surface);
+    const request = await submitAugmentationRequest(prompt, surface, {
+      selectedElement,
+    });
     const storedHistory = await requestStore.list();
     setHistory(storedHistory);
     setPrompt(request.prompt);
