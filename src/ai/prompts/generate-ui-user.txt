@@ -1,0 +1,23 @@
+Generate a UI spec for this augmentation request.
+
+The extracted data below defines the SCHEMA you must work from — use its field
+names and types exactly as they appear. Do not invent fields, do not hardcode
+literal values from the data as props. Every prop that displays content must
+reference a data field.
+
+The DOM snapshot is reference only — use it to understand the existing visual
+hierarchy, grouping, and relative importance of elements. Do not reproduce its
+class names, tag names, or structure literally.
+
+The user request below is the authority on layout, style, and intent. Where it
+conflicts with the DOM snapshot, the user request wins.
+
+---
+User request:
+{{prompt}}
+
+DOM snapshot (visual reference only):
+{{dom}}
+
+Extracted data (source of truth for all field names and types):
+{{data}}

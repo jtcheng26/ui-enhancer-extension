@@ -1,8 +1,9 @@
-import { AugmentationRequest } from "@/types";
+import { AugmentationRequest, CreateUiCommandPayload } from "@/types";
 import { DOMExtractorSpec } from "../../services/dom-extractor";
+import { Spec } from "@json-render/react";
 
-type UIRequest = object; // TODO
-type UISpec = object; // TODO
+export type UIRequest = CreateUiCommandPayload;
+export type UISpec = Spec;
 
 export interface AIProvider {
   generateExtractor(input: AugmentationRequest): Promise<DOMExtractorSpec>;

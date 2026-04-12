@@ -1,3 +1,8 @@
+import type {
+  DOMExtractorSpec,
+  ExtractedValue,
+} from "../services/dom-extractor";
+
 export interface ElementRect {
   top: number;
   left: number;
@@ -39,6 +44,13 @@ export interface AugmentationRequest {
   source: "popup" | "sidepanel" | "content";
   status: "draft" | "queued" | "mock-submitted";
   snapshot?: SelectedDomTreeSnapshot;
+}
+
+export interface CreateUiCommandPayload {
+  prompt: string;
+  source: AugmentationRequest["source"];
+  snapshot: SelectedDomTreeSnapshot;
+  data: Record<string, ExtractedValue>;
 }
 
 export interface InjectedAugmentation {
@@ -101,6 +113,10 @@ export type ExtensionRuntimeMessage =
   | {
       type: "command/submit";
       payload: AugmentationRequest;
+    }
+  | {
+      type: "command/create-ui";
+      payload: CreateUiCommandPayload;
     }
   | {
       type: "schema/discover";

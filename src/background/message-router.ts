@@ -15,6 +15,12 @@ export function registerMessageRouter() {
             .then((res) => sendResponse({ data: res }))
             .catch((err) => sendResponse({ error: err }));
           return true;
+        case "command/create-ui":
+          commandHandler()
+            .createUi(message.payload)
+            .then((res) => sendResponse({ data: res }))
+            .catch((err) => sendResponse({ error: err }));
+          return true;
         case "schema/discover":
           return discoverAndStoreSchema(message.payload);
         case "selection/toggle":

@@ -4,7 +4,10 @@ import * as Collapsible from "@radix-ui/react-collapsible";
 import { discoverAndStoreSchema } from "../../schema/schema-service";
 import { requestStore } from "../../storage/request-store";
 import { settingsStore } from "../../storage/settings-store";
-import { submitAugmentationRequest } from "../../services/command-service";
+import {
+  createUiSpec,
+  submitAugmentationRequest,
+} from "../../services/command-service";
 import type {
   AugmentationRequest,
   ExtensionSettings,
@@ -12,6 +15,9 @@ import type {
   SelectedElement,
 } from "../../types";
 import { validateAndParse } from "@/services/dom-extractor";
+import { logger } from "@/utils/logger";
+
+import Example from "../../schema/dom-extraction-example.json";
 
 interface CommandPanelProps {
   surface: "popup" | "sidepanel";
@@ -85,12 +91,28 @@ export function CommandPanel({
     }
 
     setIsSubmitting(true);
-    const res = await submitAugmentationRequest(prompt, surface, {
-      selectedElement,
-    });
+    const res = Example;
+    // await submitAugmentationRequest(prompt, surface, {
+    //   selectedElement,
+    // });
     if (res) {
-      const stuff = validateAndParse(res);
-      logger.info("Selected data", stuff);
+      const parsed = validateAndParse(res);
+
+      if (parsed.data) {
+        const uiSpec = await createUiSpec(prompt, surface, {
+          selectedElement,
+          data: parsed.data,
+        });
+
+        logger.info("Generated UI spec.", uiSpec);
+      } else {
+        logger.warn(
+          "Skipping UI spec generation because extractor parsing failed.",
+          {
+            errors: parsed.errors,
+          },
+        );
+      }
     }
     // const storedHistory = await requestStore.list();
     // setHistory(storedHistory);
