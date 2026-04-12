@@ -119,6 +119,13 @@ export type ExtensionRuntimeMessage =
       payload: CreateUiCommandPayload;
     }
   | {
+      type: "augmentation/inject";
+      payload: {
+        selectedElement: SelectedElement;
+        spec: unknown;
+      };
+    }
+  | {
       type: "schema/discover";
       payload: SchemaDiscoveryOptions;
     }

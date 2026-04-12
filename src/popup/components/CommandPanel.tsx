@@ -6,8 +6,10 @@ import { requestStore } from "../../storage/request-store";
 import { settingsStore } from "../../storage/settings-store";
 import {
   createUiSpec,
+  injectAugmentation,
   submitAugmentationRequest,
 } from "../../services/command-service";
+import Example from "../../schema/dom-extraction-example.json";
 import type {
   AugmentationRequest,
   ExtensionSettings,
@@ -16,8 +18,6 @@ import type {
 } from "../../types";
 import { validateAndParse } from "@/services/dom-extractor";
 import { logger } from "@/utils/logger";
-
-import Example from "../../schema/dom-extraction-example.json";
 
 interface CommandPanelProps {
   surface: "popup" | "sidepanel";
@@ -91,10 +91,13 @@ export function CommandPanel({
     }
 
     setIsSubmitting(true);
-    const res = Example;
+    // const res = Example;
     // await submitAugmentationRequest(prompt, surface, {
     //   selectedElement,
     // });
+    const res = await submitAugmentationRequest(prompt, surface, {
+      selectedElement,
+    });
     if (res) {
       const parsed = validateAndParse(res);
 
@@ -105,6 +108,11 @@ export function CommandPanel({
         });
 
         logger.info("Generated UI spec.", uiSpec);
+
+        if (uiSpec) {
+          await injectAugmentation(selectedElement, uiSpec);
+          void handleSettingsToggle("selectionModeEnabled");
+        }
       } else {
         logger.warn(
           "Skipping UI spec generation because extractor parsing failed.",

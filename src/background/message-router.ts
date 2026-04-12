@@ -21,6 +21,32 @@ export function registerMessageRouter() {
             .then((res) => sendResponse({ data: res }))
             .catch((err) => sendResponse({ error: err }));
           return true;
+        case "augmentation/inject":
+          browser.tabs
+            .query({ active: true, currentWindow: true })
+            .then(async (tabs) => {
+              const activeTabId = tabs[0]?.id;
+
+              if (!activeTabId) {
+                sendResponse({
+                  ok: false,
+                  handled: false,
+                  error: "No active tab found for augmentation injection.",
+                });
+                return;
+              }
+
+              await browser.tabs.sendMessage(activeTabId, message);
+              sendResponse({ ok: true, handled: true });
+            })
+            .catch((err) =>
+              sendResponse({
+                ok: false,
+                handled: false,
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          return true;
         case "schema/discover":
           return discoverAndStoreSchema(message.payload);
         case "selection/toggle":
