@@ -1,160 +1,398 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "DOMExtractorSpec",
-  "version": "1.0.0",
-  "description": "Declarative spec for extracting typed data from a DOM tree. Compiled into a safe extractor function.",
-
   "root": {
-    "selector": "#right-side-wrapper",
-    "required": false,
-    "output": "CanvasSidebar"
+    "selector": "div.ic-DashboardCard__box__container",
+    "required": true,
+    "output": "DashboardCards"
   },
-
-  "types": {
-    "CanvasSidebar": {
-      "todoItems": { "type": "array", "items": "TodoItem" },
-      "showAllTodosVisible": { "type": "boolean" },
-      "recentFeedback": { "type": "array", "items": "RecentFeedbackItem" },
-      "hasRecentFeedback": { "type": "boolean" },
-      "canStartNewCourse": { "type": "boolean" },
-      "viewGradesHref": { "type": "string", "nullable": true }
-    },
-    "TodoItem": {
-      "type": { "type": "string" },
-      "title": { "type": "string" },
-      "points": { "type": "string", "nullable": true },
-      "dueDate": { "type": "string", "nullable": true }
-    },
-    "RecentFeedbackItem": {
-      "text": { "type": "string" }
-    }
-  },
-
   "extractors": {
-    "CanvasSidebar": {
-      "todoItems": {
-        "op": "queryAll",
+    "DashboardCards": {
+      "cards": {
+        "kind": "list",
         "selectors": [
-          "#planner-todosidebar-item-list > li",
-          "[data-testid='ToDoSidebar'] ul > li",
-          ".Sidebar__TodoListContainer ul > li"
+          "div.ic-DashboardCard[data-testid='draggable-card']",
+          "div.ic-DashboardCard"
         ],
-        "map": "TodoItem"
-      },
-
-      "showAllTodosVisible": {
-        "op": "exists",
-        "selectors": [
-          "[data-testid='ToDoSidebar'] [class*='css-n5p8o3']",
-          "[data-testid='ToDoSidebar'] a",
-          "[data-testid='ToDoSidebar'] button"
-        ],
-        "filter": {
-          "textMatches": "(?i)show all"
-        }
-      },
-
-      "recentFeedback": {
-        "op": "queryAll",
-        "selectors": [
-          ".events_list.recent_feedback ul.right-side-list > li",
-          ".recent_feedback ul > li"
-        ],
-        "map": "RecentFeedbackItem",
-        "postProcess": {
-          "filterOut": {
-            "textMatches": "(?i)^nothing for now$"
-          }
-        }
-      },
-
-      "hasRecentFeedback": {
-        "op": "derive",
-        "from": "recentFeedback",
-        "fn": "arrayNotEmpty"
-      },
-
-      "canStartNewCourse": {
-        "op": "exists",
-        "selectors": ["#start_new_course", "[aria-controls='new_course_form']"]
-      },
-
-      "viewGradesHref": {
-        "op": "attr",
-        "selectors": ["a[href='/grades']", "a[href*='grades']"],
-        "attr": "href",
-        "fallback": null
+        "item": "DashboardCard",
+        "limit": 20,
+        "unique": true
       }
     },
-
-    "TodoItem": {
-      "type": {
-        "op": "text",
-        "selectors": [".screenreader-only", "[class*='label']"],
-        "transform": [
-          { "fn": "replace", "pattern": "(?i)dismiss", "with": "" },
-          { "fn": "trim" },
-          { "fn": "defaultIfEmpty", "value": "assignment" }
-        ]
-      },
-
-      "title": {
-        "op": "text",
-        "selectors": [
-          "a [class*='title']",
-          "[class*='PlannerItem__Title']",
-          "a"
-        ],
-        "fallback": {
-          "op": "textLines",
-          "pick": "first"
-        }
-      },
-
-      "points": {
-        "op": "text",
-        "selectors": [
-          "[class*='points']",
-          "[data-testid*='points']",
-          "[class*='Points']"
-        ],
-        "fallback": {
-          "op": "textRegex",
-          "pattern": "(\\d+\\s*points?)",
-          "flags": "i",
-          "group": 1
-        },
-        "nullable": true
-      },
-
-      "dueDate": {
-        "op": "first",
-        "branches": [
+    "DashboardCard": {
+      "courseName": {
+        "kind": "value",
+        "sources": [
           {
-            "op": "attr",
-            "selectors": ["time"],
-            "attr": "datetime"
+            "type": "attr",
+            "selectors": [
+              "h2.ic-DashboardCard__header-title[title]",
+              "h2[data-testid='dashboard-card-title'][title]"
+            ],
+            "attr": "title",
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ]
           },
           {
-            "op": "text",
-            "selectors": ["time", "[class*='due']", "[data-testid*='date']"]
+            "type": "text",
+            "selectors": [
+              "h2.ic-DashboardCard__header-title",
+              "h2[data-testid='dashboard-card-title']"
+            ],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ]
+          }
+        ],
+        "nullable": false
+      },
+      "courseCode": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "attr",
+            "selectors": ["div.ic-DashboardCard__header-subtitle[title]"],
+            "attr": "title",
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ]
           },
           {
-            "op": "textRegex",
-            "pattern": "((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+\\d+\\s+at\\s+\\d+:\\d+\\s*[ap]m)",
-            "flags": "i",
-            "group": 1
+            "type": "text",
+            "selectors": ["div.ic-DashboardCard__header-subtitle"],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ]
           }
         ],
         "nullable": true
+      },
+      "courseUrl": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "attr",
+            "selectors": ["a.ic-DashboardCard__link[href]"],
+            "attr": "href",
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ]
+          }
+        ],
+        "nullable": false
+      },
+      "cardAriaLabel": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "attr",
+            "selectors": ["div.ic-DashboardCard[aria-label]"],
+            "attr": "aria-label",
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ]
+          }
+        ],
+        "nullable": true
+      },
+      "imageUrl": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "attr",
+            "selectors": ["div.ic-DashboardCard__header_image[style]"],
+            "attr": "style",
+            "transform": [
+              {
+                "fn": "trim"
+              },
+              {
+                "fn": "replace",
+                "pattern": "^.*url\\([\"']?",
+                "with": "",
+                "flags": "i"
+              },
+              {
+                "fn": "replace",
+                "pattern": "[\"']?\\).*",
+                "with": "",
+                "flags": "i"
+              }
+            ]
+          }
+        ],
+        "nullable": true
+      },
+      "color": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "attr",
+            "selectors": ["div.ic-DashboardCard__header_hero[style]"],
+            "attr": "style",
+            "transform": [
+              {
+                "fn": "trim"
+              },
+              {
+                "fn": "replace",
+                "pattern": "^.*background-color:\\s*",
+                "with": "",
+                "flags": "i"
+              },
+              {
+                "fn": "replace",
+                "pattern": ";.*$",
+                "with": "",
+                "flags": "i"
+              }
+            ]
+          }
+        ],
+        "nullable": true
+      },
+      "actions": {
+        "kind": "list",
+        "selectors": [
+          "nav.ic-DashboardCard__action-container > a.ic-DashboardCard__action",
+          "nav.ic-DashboardCard__action-container a.ic-DashboardCard__action"
+        ],
+        "item": "DashboardAction",
+        "limit": 5,
+        "unique": true
+      },
+      "moreMenuExpanded": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "attr",
+            "selectors": [
+              "button.ic-DashboardCard__header-button[aria-expanded]"
+            ],
+            "attr": "aria-expanded",
+            "transform": [
+              {
+                "fn": "trim"
+              },
+              {
+                "fn": "lowercase"
+              }
+            ]
+          },
+          {
+            "type": "exists",
+            "selectors": ["button.ic-DashboardCard__header-button"],
+            "filter": {
+              "hasChild": "i.icon-more"
+            }
+          }
+        ],
+        "nullable": true
+      },
+      "moreMenuButtonLabel": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "text",
+            "selectors": [
+              "button.ic-DashboardCard__header-button .screenreader-only"
+            ],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ]
+          }
+        ],
+        "nullable": true
+      },
+      "hasAnnouncementsAction": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "exists",
+            "selectors": [
+              "nav.ic-DashboardCard__action-container a.ic-DashboardCard__action.announcements"
+            ],
+            "filter": {}
+          }
+        ],
+        "nullable": false
+      },
+      "hasAssignmentsAction": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "exists",
+            "selectors": [
+              "nav.ic-DashboardCard__action-container a.ic-DashboardCard__action.assignments"
+            ],
+            "filter": {}
+          }
+        ],
+        "nullable": false
+      },
+      "hasDiscussionsAction": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "exists",
+            "selectors": [
+              "nav.ic-DashboardCard__action-container a.ic-DashboardCard__action.discussions"
+            ],
+            "filter": {}
+          }
+        ],
+        "nullable": false
+      },
+      "hasFilesAction": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "exists",
+            "selectors": [
+              "nav.ic-DashboardCard__action-container a.ic-DashboardCard__action.files"
+            ],
+            "filter": {}
+          }
+        ],
+        "nullable": false
+      },
+      "actionCount": {
+        "kind": "derive",
+        "from": "actions",
+        "fn": "arrayLength"
       }
     },
-
-    "RecentFeedbackItem": {
-      "text": {
-        "op": "text",
-        "selectors": ["*"],
-        "transform": [{ "fn": "trim" }]
+    "DashboardAction": {
+      "actionType": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "attr",
+            "selectors": ["a.ic-DashboardCard__action[title]"],
+            "attr": "title",
+            "transform": [
+              {
+                "fn": "trim"
+              },
+              {
+                "fn": "replace",
+                "pattern": "\\s*-\\s*.*$",
+                "with": "",
+                "flags": "i"
+              }
+            ]
+          },
+          {
+            "type": "attr",
+            "selectors": ["a.ic-DashboardCard__action[href]"],
+            "attr": "href",
+            "transform": [
+              {
+                "fn": "trim"
+              },
+              {
+                "fn": "replace",
+                "pattern": "^/courses/\\d+/",
+                "with": "",
+                "flags": "i"
+              },
+              {
+                "fn": "replace",
+                "pattern": "[/?#].*$",
+                "with": "",
+                "flags": "i"
+              }
+            ]
+          }
+        ],
+        "nullable": false
+      },
+      "actionTitle": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "attr",
+            "selectors": ["a.ic-DashboardCard__action[title]"],
+            "attr": "title",
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "selectors": ["a.ic-DashboardCard__action .screenreader-only"],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ]
+          }
+        ],
+        "nullable": true
+      },
+      "href": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "attr",
+            "selectors": ["a.ic-DashboardCard__action[href]"],
+            "attr": "href",
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ]
+          }
+        ],
+        "nullable": false
+      },
+      "badgeCount": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "text",
+            "selectors": ["a.ic-DashboardCard__action .unread_count"],
+            "transform": [
+              {
+                "fn": "trim"
+              },
+              {
+                "fn": "parseNumber"
+              }
+            ]
+          },
+          {
+            "type": "static",
+            "value": 0
+          }
+        ],
+        "nullable": false
+      },
+      "hasUnreadBadge": {
+        "kind": "value",
+        "sources": [
+          {
+            "type": "exists",
+            "selectors": ["a.ic-DashboardCard__action .unread_count"],
+            "filter": {}
+          }
+        ],
+        "nullable": false
       }
     }
   }
