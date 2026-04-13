@@ -24,6 +24,10 @@ export function FloatingWindow({
 }: FloatingWindowProps) {
   const [position, setPosition] = useState(DEFAULT_POSITION);
   const [size, setSize] = useState(DEFAULT_SIZE);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [pendingAugmentationId, setPendingAugmentationId] = useState<
+    string | null
+  >(null);
 
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const resizeRef = useRef<{
@@ -121,19 +125,36 @@ export function FloatingWindow({
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
+  if (pendingAugmentationId) {
+    return (
+      <div className="fixed bottom-6 left-1/2 z-[2147483647] -translate-x-1/2">
+        <div className="w-[min(380px,calc(100vw-24px))] rounded-[26px] bg-slate-900/20 p-[6px] backdrop-blur-md shadow-[0_24px_60px_rgba(15,23,42,0.28)]">
+          <div className="relative overflow-hidden rounded-[22px] bg-slate-800">
+            <PopupApp
+              mode="floating"
+              pendingAugmentationId={pendingAugmentationId}
+              previewVariant="prompt"
+              onPendingAugmentationChange={setPendingAugmentationId}
+              selectedElement={selectedElement}
+              onPreviewModeChange={setIsPreviewMode}
+              onRequestClose={onClose}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="fixed left-0 top-0 z-[2147483647]"
       style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
     >
-      {/* Blurred border shell */}
       <div
         className="rounded-[30px] bg-slate-900/20 p-[6px] backdrop-blur-md shadow-[0_24px_60px_rgba(15,23,42,0.28)]"
         style={{ width: size.width, height: size.height }}
       >
-        {/* Actual panel */}
         <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[28px] bg-white">
-          {/* ── Header / drag handle ── */}
           <div
             className="flex shrink-0 cursor-move items-center justify-between border-b border-slate-200/80 bg-slate-950 px-4 py-3 text-white"
             onPointerDown={handlePointerDown}
@@ -155,16 +176,18 @@ export function FloatingWindow({
             </button>
           </div>
 
-          {/* ── Scrollable content ── */}
           <div className="min-h-0 flex-1 overflow-y-auto">
             <PopupApp
               mode="floating"
+              pendingAugmentationId={pendingAugmentationId}
+              previewVariant="full"
+              onPendingAugmentationChange={setPendingAugmentationId}
               selectedElement={selectedElement}
+              onPreviewModeChange={setIsPreviewMode}
               onRequestClose={onClose}
             />
           </div>
 
-          {/* Resize handles */}
           <div
             className="absolute right-0 top-0 h-full w-2 cursor-ew-resize"
             {...resizeHandleProps("e")}

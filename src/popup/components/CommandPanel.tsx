@@ -24,8 +24,12 @@ import { logger } from "@/utils/logger";
 interface CommandPanelProps {
   surface: "popup" | "sidepanel";
   mode?: "standalone" | "floating";
+  previewVariant?: "full" | "prompt";
+  pendingAugmentationId?: string | null;
   selectedElement?: SelectedElement | null;
+  onPendingAugmentationChange?: (id: string | null) => void;
   onRequestClose?: () => void;
+  onPreviewModeChange?: (enabled: boolean) => void;
 }
 
 type AugmentationStrategy = "schema" | "rerender";
@@ -57,8 +61,12 @@ const STRATEGY_OPTIONS: {
 export function CommandPanel({
   surface,
   mode = "standalone",
+  previewVariant = "full",
+  pendingAugmentationId: externalPendingAugmentationId = null,
   selectedElement = null,
+  onPendingAugmentationChange,
   onRequestClose,
+  onPreviewModeChange,
 }: CommandPanelProps) {
   const [prompt, setPrompt] = useState("");
   const [persistedAugmentations, setPersistedAugmentations] = useState<
@@ -66,9 +74,6 @@ export function CommandPanel({
   >([]);
   const [settings, setSettings] = useState<ExtensionSettings | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [pendingAugmentationId, setPendingAugmentationId] = useState<
-    string | null
-  >(null);
   const [requestSettings, setRequestSettings] = useState<RequestSettings>({
     strategy: "rerender",
   });
@@ -77,6 +82,12 @@ export function CommandPanel({
   const isPopup = surface === "popup";
   const isFloating = mode === "floating";
   const augmentationEngine = useAugmentationEngine();
+  const pendingAugmentationId = externalPendingAugmentationId;
+  const isPreviewMode = Boolean(pendingAugmentationId);
+
+  function updatePendingAugmentationId(id: string | null) {
+    onPendingAugmentationChange?.(id);
+  }
 
   async function refreshPersistedAugmentations() {
     const storedAugmentations = await persistedAugmentationStore.list();
@@ -95,6 +106,23 @@ export function CommandPanel({
       setPrompt(storedSettings.lastCommand ?? "");
     })();
   }, []);
+
+  useEffect(() => {
+    onPreviewModeChange?.(isPreviewMode);
+  }, [isPreviewMode, onPreviewModeChange]);
+
+  useEffect(() => {
+    if (!augmentationEngine || !pendingAugmentationId) {
+      augmentationEngine?.clearHighlightedAugmentation();
+      return;
+    }
+
+    augmentationEngine.highlightAugmentation(pendingAugmentationId);
+
+    return () => {
+      augmentationEngine.clearHighlightedAugmentation();
+    };
+  }, [augmentationEngine, pendingAugmentationId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -125,7 +153,7 @@ export function CommandPanel({
             uiSpec,
           );
 
-          setPendingAugmentationId(injectedAugmentation?.id ?? null);
+          updatePendingAugmentationId(injectedAugmentation?.id ?? null);
           void handleSettingsToggle("selectionModeEnabled");
         }
       } else {
@@ -148,14 +176,14 @@ export function CommandPanel({
 
     await augmentationEngine.persistAugmentation(pendingAugmentationId);
     await refreshPersistedAugmentations();
-    setPendingAugmentationId(null);
+    updatePendingAugmentationId(null);
   }
 
-  async function handleCancelAugmentation() {
+  async function handleDeletePreviewAugmentation() {
     if (!augmentationEngine || !pendingAugmentationId) return;
 
     augmentationEngine.remove(pendingAugmentationId);
-    setPendingAugmentationId(null);
+    updatePendingAugmentationId(null);
   }
 
   async function handlePersistedToggle(augmentation: PersistedAugmentation) {
@@ -178,7 +206,7 @@ export function CommandPanel({
     augmentationEngine?.remove(augmentation.id);
 
     if (pendingAugmentationId === augmentation.id) {
-      setPendingAugmentationId(null);
+      updatePendingAugmentationId(null);
     }
 
     await refreshPersistedAugmentations();
@@ -199,6 +227,33 @@ export function CommandPanel({
   const wrapperClassName = isFloating
     ? "w-full min-w-[280px] bg-transparent p-0"
     : `bg-stone-100 text-slate-900 ${shellClassName} bg-[radial-gradient(circle_at_top_left,_rgba(254,240,138,0.28),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(125,211,252,0.22),_transparent_36%)] p-4`;
+
+  if (previewVariant === "prompt" && isPreviewMode) {
+    return (
+      <div className="flex justify-between items-center p-3">
+        <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-500 pl-3">
+          Preview
+        </span>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-emerald-500 cursor-pointer"
+            type="button"
+            onClick={() => void handleConfirmAugmentation()}
+          >
+            Confirm
+          </button>
+          <button
+            className="inline-flex items-center justify-center rounded-full bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-200 cursor-pointer"
+            type="button"
+            onClick={() => void handleDeletePreviewAugmentation()}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={wrapperClassName}>
@@ -373,25 +428,6 @@ export function CommandPanel({
               Clear
             </button>
           </div>
-
-          {pendingAugmentationId ? (
-            <div className="flex flex-wrap gap-2 pt-2">
-              <button
-                className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-emerald-500 cursor-pointer"
-                type="button"
-                onClick={() => void handleConfirmAugmentation()}
-              >
-                Confirm
-              </button>
-              <button
-                className="inline-flex items-center justify-center rounded-full bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-200 cursor-pointer"
-                type="button"
-                onClick={() => void handleCancelAugmentation()}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : null}
         </form>
 
         {/* ── Persisted augmentations ── */}
@@ -409,7 +445,8 @@ export function CommandPanel({
             {persistedAugmentations.length === 0 ? (
               <div className="rounded-2xl border border-slate-900/8 bg-slate-50/80 p-4">
                 <p className="text-sm leading-6 text-slate-600">
-                  No persisted augmentations yet. Create one above and confirm it.
+                  No persisted augmentations yet. Create one above and confirm
+                  it.
                 </p>
               </div>
             ) : (

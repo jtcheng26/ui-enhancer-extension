@@ -38,6 +38,7 @@ interface MountedAugmentation {
   extractor?: DOMExtractorSpec;
   spec?: UISpec;
   originalElement?: HTMLElement;
+  renderedElement?: HTMLElement | null;
   originalDisplay?: string;
   originalAriaHidden?: string | null;
   ui?: ShadowRootContentScriptUi<{ root: ReactDOM.Root }>;
@@ -51,14 +52,19 @@ export class AugmentationEngine {
     MountedAugmentation
   >();
   private readonly injectionOrder: string[] = [];
+  private readonly previewOverlay = document.createElement("div");
   private persistedAugmentationObserver?: MutationObserver;
   private persistedAugmentationObserverFrame: number | null = null;
+  private highlightedAugmentationId: string | null = null;
 
   constructor(
     private readonly ctx: ContentScriptContext,
     private readonly root: Document,
     private readonly persistedAugmentationStore: PersistedAugmentationStore,
-  ) {}
+  ) {
+    this.configurePreviewOverlay();
+    this.root.body.append(this.previewOverlay);
+  }
 
   async inject(
     extractor: DOMExtractorSpec,
@@ -66,6 +72,8 @@ export class AugmentationEngine {
     persistedId?: string,
   ) {
     const id = persistedId ?? crypto.randomUUID();
+    const shadowRootName = `augmentation_${id}`;
+    if (document.querySelector(shadowRootName)) return null;
 
     const { data, root: replacedElement } = validateAndParse(extractor);
     if (replacedElement instanceof Document) {
@@ -95,10 +103,9 @@ export class AugmentationEngine {
     const originalAriaHidden = replacedElement.getAttribute("aria-hidden");
     const mountAnchor = this.root.createElement("div");
     const label = extractor.root.output;
-    const shadowRootName = `augmentation_${id}`;
+
     const temp = document.createElement(shadowRootName);
     temp.id = shadowRootName;
-    if (document.querySelector(shadowRootName)) return null;
     // avoid race condition during createShadowRootUi coroutine
     document.body.appendChild(temp);
 
@@ -167,6 +174,10 @@ export class AugmentationEngine {
       extractor,
       spec,
       originalElement: replacedElement,
+      renderedElement:
+        replacedElement.nextElementSibling instanceof HTMLElement
+          ? replacedElement.nextElementSibling
+          : null,
       originalDisplay,
       originalAriaHidden,
       ui,
@@ -185,6 +196,35 @@ export class AugmentationEngine {
     document.getElementById(shadowRootName)?.remove();
 
     return augmentation;
+  }
+
+  highlightAugmentation(id: string) {
+    const mountedAugmentation = this.mountedAugmentations.get(id);
+    const targetElement =
+      mountedAugmentation?.renderedElement ??
+      mountedAugmentation?.originalElement ??
+      null;
+
+    if (!targetElement) {
+      this.clearHighlightedAugmentation();
+      return false;
+    }
+
+    const rect = targetElement.getBoundingClientRect();
+    this.previewOverlay.style.display = "block";
+    this.previewOverlay.style.top = `${rect.top}px`;
+    this.previewOverlay.style.left = `${rect.left}px`;
+    this.previewOverlay.style.width = `${rect.width}px`;
+    this.previewOverlay.style.height = `${rect.height}px`;
+    this.highlightedAugmentationId = id;
+    return true;
+  }
+
+  clearHighlightedAugmentation() {
+    this.highlightedAugmentationId = null;
+    this.previewOverlay.style.display = "none";
+    this.previewOverlay.style.width = "0";
+    this.previewOverlay.style.height = "0";
   }
 
   async undoMostRecentAugmentation() {
@@ -301,6 +341,10 @@ export class AugmentationEngine {
     const mountedAugmentation = this.mountedAugmentations.get(id);
     mountedAugmentation?.teardown();
 
+    if (this.highlightedAugmentationId === id) {
+      this.clearHighlightedAugmentation();
+    }
+
     if (mountedAugmentation?.originalElement) {
       mountedAugmentation.originalElement.style.display =
         mountedAugmentation.originalDisplay ?? "";
@@ -338,7 +382,25 @@ export class AugmentationEngine {
       this.persistedAugmentationObserverFrame = null;
     }
 
+    this.clearHighlightedAugmentation();
+    this.previewOverlay.remove();
     this.list().forEach((item) => this.remove(item.id));
+  }
+
+  private configurePreviewOverlay() {
+    Object.assign(this.previewOverlay.style, {
+      boxSizing: "border-box",
+      pointerEvents: "none",
+      position: "fixed",
+      zIndex: "2147483646",
+      borderRadius: "12px",
+      border: "2px solid rgba(255, 117, 47, 0.95)",
+      background: "rgba(255, 117, 47, 0.12)",
+      display: "none",
+      width: "0",
+      height: "0",
+      transition: "transform 80ms ease, width 80ms ease, height 80ms ease",
+    });
   }
 
   // TODO: Add selector-aware rendering and transformation hooks.
