@@ -1,0 +1,286 @@
+{
+  "extractors": {
+    "RecentFeedbackItem": {
+      "text": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "selectors": ["small"],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "text"
+          }
+        ]
+      }
+    },
+    "RightSidebar": {
+      "createCourseModalExists": {
+        "kind": "value",
+        "nullable": false,
+        "sources": [
+          {
+            "filter": {},
+            "selectors": ["#create_course_modal_container"],
+            "type": "exists"
+          }
+        ]
+      },
+      "hasRecentFeedback": {
+        "fn": "arrayNotEmpty",
+        "from": "recentFeedback",
+        "kind": "derive"
+      },
+      "hasToDo": {
+        "fn": "arrayNotEmpty",
+        "from": "toDo",
+        "kind": "derive"
+      },
+      "recentFeedback": {
+        "item": "RecentFeedbackItem",
+        "kind": "list",
+        "limit": 5,
+        "selectors": [
+          "#right-side .events_list.recent_feedback ul.right-side-list.events > li",
+          ".events_list.recent_feedback ul.right-side-list.events > li"
+        ],
+        "unique": true
+      },
+      "showAllLabel": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "selectors": [
+              "#right-side .css-n5p8o3-view button",
+              ".css-n5p8o3-view button"
+            ],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "text"
+          }
+        ]
+      },
+      "startNewCourseLabel": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "selectors": ["#start_new_course", "button#start_new_course"],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "text"
+          }
+        ]
+      },
+      "toDo": {
+        "item": "ToDoItem",
+        "kind": "list",
+        "limit": 5,
+        "selectors": [
+          "#right-side [data-testid='ToDoSidebar'] #planner-todosidebar-item-list > li",
+          ".Sidebar__TodoListContainer #planner-todosidebar-item-list > li"
+        ],
+        "unique": true
+      },
+      "viewGradesLabel": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "selectors": ["#right-side a[href='/grades']", "a[href='/grades']"],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "text"
+          }
+        ]
+      }
+    },
+    "ToDoItem": {
+      "courseName": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "selectors": [
+              "[data-testid='todo-sidebar-item-info'] > span:nth-of-type(1)",
+              "[data-testid='todo-sidebar-item-info'] > span"
+            ],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "text"
+          }
+        ]
+      },
+      "dismissButtonType": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "attr": "type",
+            "selectors": [
+              "[data-testid='todo-sidebar-item-close-button'] button"
+            ],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "attr"
+          }
+        ]
+      },
+      "dismissLabel": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "selectors": [
+              "[data-testid='todo-sidebar-item-close-button'] .css-r9cwls-screenReaderContent",
+              "[data-testid='todo-sidebar-item-close-button'] .r9cwls-screenReaderContent"
+            ],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "text"
+          },
+          {
+            "attr": "aria-label",
+            "selectors": [
+              "[data-testid='todo-sidebar-item-close-button'] button"
+            ],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "attr"
+          }
+        ]
+      },
+      "dueText": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "selectors": [
+              "[data-testid='ToDoSidebarItem__InformationRow'] > li:nth-of-type(2)"
+            ],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "text"
+          }
+        ]
+      },
+      "href": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "attr": "href",
+            "selectors": ["[data-testid='todo-sidebar-item-title'] a"],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "attr"
+          }
+        ]
+      },
+      "pointsText": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "selectors": [
+              "[data-testid='ToDoSidebarItem__InformationRow'] > li:nth-of-type(1)",
+              "[data-testid='ToDoSidebarItem__InformationRow'] > li"
+            ],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "text"
+          }
+        ]
+      },
+      "title": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "selectors": [
+              "[data-testid='todo-sidebar-item-title'] a span",
+              "[data-testid='todo-sidebar-item-title'] a"
+            ],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "text"
+          },
+          {
+            "attr": "aria-label",
+            "selectors": ["[data-testid='todo-sidebar-item-title'] a"],
+            "transform": [
+              {
+                "fn": "trim"
+              },
+              {
+                "flags": "i",
+                "fn": "replace",
+                "pattern": "^Assignment,\\s*",
+                "with": ""
+              }
+            ],
+            "type": "attr"
+          }
+        ]
+      },
+      "titleAriaLabel": {
+        "kind": "value",
+        "nullable": true,
+        "sources": [
+          {
+            "attr": "aria-label",
+            "selectors": ["[data-testid='todo-sidebar-item-title'] a"],
+            "transform": [
+              {
+                "fn": "trim"
+              }
+            ],
+            "type": "attr"
+          }
+        ]
+      }
+    }
+  },
+  "root": {
+    "output": "RightSidebar",
+    "required": true,
+    "selector": "#right-side-wrapper"
+  }
+}

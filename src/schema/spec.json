@@ -1,0 +1,315 @@
+{
+  "elements": {
+    "actions-row": {
+      "children": ["show-all-button", "start-course-button"],
+      "props": {
+        "align": "center",
+        "direction": "horizontal",
+        "gap": "md",
+        "justify": "between"
+      },
+      "type": "Stack"
+    },
+    "dismiss-button": {
+      "children": [],
+      "props": {
+        "label": {
+          "$template": "${dismissLabel}"
+        },
+        "variant": "secondary"
+      },
+      "type": "Button"
+    },
+    "feedback-heading": {
+      "children": [],
+      "props": {
+        "level": "h2",
+        "text": {
+          "$template": "${showAllLabel}"
+        }
+      },
+      "type": "Heading"
+    },
+    "feedback-item-template": {
+      "children": [],
+      "props": {
+        "description": {
+          "$template": "${text}"
+        },
+        "maxWidth": "md",
+        "title": {
+          "$template": "${text}"
+        }
+      },
+      "repeat": {
+        "key": "text",
+        "statePath": "/recentFeedback"
+      },
+      "type": "Card"
+    },
+    "feedback-list": {
+      "children": ["feedback-item-template"],
+      "props": {
+        "direction": "vertical",
+        "gap": "sm"
+      },
+      "type": "Stack"
+    },
+    "feedback-section": {
+      "children": ["feedback-stack"],
+      "props": {
+        "description": {
+          "$template": "${startNewCourseLabel}"
+        },
+        "maxWidth": "full",
+        "title": {
+          "$template": "${viewGradesLabel}"
+        }
+      },
+      "type": "Card"
+    },
+    "feedback-stack": {
+      "children": ["feedback-heading", "feedback-list"],
+      "props": {
+        "direction": "vertical",
+        "gap": "sm"
+      },
+      "type": "Stack"
+    },
+    "header-stack": {
+      "children": ["title", "subtitle"],
+      "props": {
+        "direction": "vertical",
+        "gap": "sm"
+      },
+      "type": "Stack"
+    },
+    "main": {
+      "children": ["page-stack"],
+      "props": {
+        "description": {
+          "$template": "${startNewCourseLabel}"
+        },
+        "maxWidth": "full",
+        "title": {
+          "$template": "${showAllLabel}"
+        }
+      },
+      "type": "Card"
+    },
+    "page-stack": {
+      "children": [
+        "header-stack",
+        "todo-section",
+        "feedback-section",
+        "actions-row"
+      ],
+      "props": {
+        "direction": "vertical",
+        "gap": "lg"
+      },
+      "type": "Stack"
+    },
+    "show-all-button": {
+      "children": [],
+      "props": {
+        "label": {
+          "$template": "${showAllLabel}"
+        },
+        "variant": "primary"
+      },
+      "type": "Button"
+    },
+    "start-course-button": {
+      "children": [],
+      "props": {
+        "label": {
+          "$template": "${startNewCourseLabel}"
+        },
+        "variant": "secondary"
+      },
+      "type": "Button"
+    },
+    "subtitle": {
+      "children": [],
+      "props": {
+        "level": "h3",
+        "text": {
+          "$template": "${startNewCourseLabel}"
+        }
+      },
+      "type": "Heading"
+    },
+    "title": {
+      "children": [],
+      "props": {
+        "level": "h1",
+        "text": {
+          "$template": "${viewGradesLabel}"
+        }
+      },
+      "type": "Heading"
+    },
+    "todo-item-actions": {
+      "children": ["todo-points", "dismiss-button"],
+      "props": {
+        "align": "center",
+        "direction": "horizontal",
+        "gap": "sm"
+      },
+      "type": "Stack"
+    },
+    "todo-item-left": {
+      "children": ["todo-item-title", "todo-item-meta"],
+      "props": {
+        "direction": "vertical",
+        "gap": "sm"
+      },
+      "type": "Stack"
+    },
+    "todo-item-meta": {
+      "children": [],
+      "props": {
+        "level": "h4",
+        "text": {
+          "$template": "${courseName} · ${dueText}"
+        }
+      },
+      "type": "Heading"
+    },
+    "todo-item-row": {
+      "children": ["todo-item-left", "todo-item-actions"],
+      "props": {
+        "align": "center",
+        "direction": "horizontal",
+        "gap": "md",
+        "justify": "between"
+      },
+      "type": "Stack"
+    },
+    "todo-item-template": {
+      "children": ["todo-item-row"],
+      "props": {
+        "description": {
+          "$template": "${courseName} • ${pointsText} • ${dueText}"
+        },
+        "maxWidth": "full",
+        "title": {
+          "$template": "${title}"
+        }
+      },
+      "repeat": {
+        "key": "title",
+        "statePath": "/toDo"
+      },
+      "type": "Card"
+    },
+    "todo-item-title": {
+      "children": [],
+      "props": {
+        "level": "h3",
+        "text": {
+          "$template": "${title}"
+        }
+      },
+      "type": "Heading"
+    },
+    "todo-list": {
+      "children": ["todo-item-template"],
+      "props": {
+        "direction": "vertical",
+        "gap": "md"
+      },
+      "type": "Stack"
+    },
+    "todo-points": {
+      "children": [],
+      "props": {
+        "level": "h4",
+        "text": {
+          "$template": "${pointsText}"
+        }
+      },
+      "type": "Heading"
+    },
+    "todo-section": {
+      "children": ["todo-list"],
+      "props": {
+        "description": {
+          "$template": "${viewGradesLabel}"
+        },
+        "maxWidth": "full",
+        "title": {
+          "$template": "${showAllLabel}"
+        }
+      },
+      "type": "Card"
+    }
+  },
+  "root": "main",
+  "state": {
+    "createCourseModalExists": true,
+    "hasRecentFeedback": true,
+    "hasToDo": true,
+    "recentFeedback": [
+      {
+        "text": "Nothing for now"
+      }
+    ],
+    "showAllLabel": "Show All",
+    "startNewCourseLabel": "Start a New Course",
+    "toDo": [
+      {
+        "courseName": "Biology",
+        "dismissButtonType": "button",
+        "dismissLabel": "Dismiss Educ BIO Assignment 6",
+        "dueText": "Apr 10 at 11:59pm",
+        "href": "/courses/14192559/assignments/63770625",
+        "pointsText": "100 points",
+        "title": "Educ BIO Assignment 6",
+        "titleAriaLabel": "Assignment, Educ BIO Assignment 6"
+      },
+      {
+        "courseName": "Calculus II",
+        "dismissButtonType": "button",
+        "dismissLabel": "Dismiss Educ CALC Assignment 6",
+        "dueText": "Apr 10 at 11:59pm",
+        "href": "/courses/14050255/assignments/63770717",
+        "pointsText": "100 points",
+        "title": "Educ CALC Assignment 6",
+        "titleAriaLabel": "Assignment, Educ CALC Assignment 6"
+      },
+      {
+        "courseName": "Computer",
+        "dismissButtonType": "button",
+        "dismissLabel": "Dismiss Educ COMP Assignment 6",
+        "dueText": "Apr 10 at 11:59pm",
+        "href": "/courses/13992955/assignments/63764047",
+        "pointsText": "100 points",
+        "title": "Educ COMP Assignment 6",
+        "titleAriaLabel": "Assignment, Educ COMP Assignment 6"
+      },
+      {
+        "courseName": "English Test",
+        "dismissButtonType": "button",
+        "dismissLabel": "Dismiss Educ ENG Assignment 6",
+        "dueText": "Apr 10 at 11:59pm",
+        "href": "/courses/12452872/assignments/63770757",
+        "pointsText": "100 points",
+        "title": "Educ ENG Assignment 6",
+        "titleAriaLabel": "Assignment, Educ ENG Assignment 6"
+      },
+      {
+        "courseName": "History",
+        "dismissButtonType": "button",
+        "dismissLabel": "Dismiss Educ HIST Assignment 6",
+        "dueText": "Apr 10 at 11:59pm",
+        "href": "/courses/14190013/assignments/63770805",
+        "pointsText": "100 points",
+        "title": "Educ HIST Assignment 6",
+        "titleAriaLabel": "Assignment, Educ HIST Assignment 6"
+      }
+    ],
+    "viewGradesLabel": "View Grades"
+  }
+}

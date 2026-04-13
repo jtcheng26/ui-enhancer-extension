@@ -8,7 +8,9 @@ import {
   createUiSpec,
   submitAugmentationRequest,
 } from "../../services/command-service";
-import Example from "../../schema/dom-extraction-example.json";
+// import Example from "../../schema/dom-extraction-example.json";
+import Example from "../../schema/example.json";
+import SpecExample from "../../schema/spec.json";
 import type {
   AugmentationRequest,
   ExtensionSettings,
@@ -171,6 +173,8 @@ export function CommandPanel({
             selectedElement,
             data: parsed.data,
           });
+
+          // const uiSpec = SpecExample;
 
           if (submissionVersion !== submissionVersionRef.current) {
             return;

@@ -11,6 +11,7 @@ import { FloatingPopupController } from "./floating-popup-controller";
 import { HoverHighlighter } from "./hover-highlighter";
 import { SelectionOverlayRenderer } from "./selection-overlay";
 import { SelectionStateManager } from "./selection-state";
+import { jsonRenderSystemPrompt } from "@/ai/ui/prompt";
 
 export async function initializeContentPrototype(ctx: ContentScriptContext) {
   const settings = await settingsStore.get();

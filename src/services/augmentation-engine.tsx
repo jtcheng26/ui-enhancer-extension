@@ -9,12 +9,19 @@ import { logger } from "../utils/logger";
 import type { ContentScriptContext, ShadowRootContentScriptUi } from "#imports";
 import {
   ActionProvider,
+  createStateStore,
   Renderer,
   StateProvider,
+  type StateStore,
   VisibilityProvider,
 } from "@json-render/react";
+import { flattenToPointers } from "@json-render/core/store-utils";
 import { registry } from "@/ai/ui/catalog";
-import { DOMExtractorSpec, validateAndParse } from "./dom-extractor";
+import {
+  DOMExtractorSpec,
+  type ExtractedValue,
+  validateAndParse,
+} from "./dom-extractor";
 
 function applyPlaceholderStyles(element: HTMLDivElement) {
   Object.assign(element.style, {
@@ -37,12 +44,79 @@ interface MountedAugmentation {
   augmentation: InjectedAugmentation;
   extractor?: DOMExtractorSpec;
   spec?: UISpec;
+  stateStore?: StateStore;
+  lastScrapedData?: Record<string, ExtractedValue>;
   originalElement?: HTMLElement;
   renderedElement?: HTMLElement | null;
   originalDisplay?: string;
   originalAriaHidden?: string | null;
   ui?: ShadowRootContentScriptUi<{ root: ReactDOM.Root }>;
   teardown: () => void;
+}
+
+function isPlainObject(
+  value: unknown,
+): value is Record<string, ExtractedValue | undefined> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+function areExtractedValuesEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) {
+    return true;
+  }
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    return a.every((value, index) => areExtractedValuesEqual(value, b[index]));
+  }
+
+  if (!isPlainObject(a) || !isPlainObject(b)) {
+    return false;
+  }
+
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+
+  return aKeys.every((key) => areExtractedValuesEqual(a[key], b[key]));
+}
+
+function createStoreUpdates(
+  previousState: Record<string, unknown>,
+  nextState: Record<string, ExtractedValue>,
+) {
+  const previousPointers = flattenToPointers(previousState);
+  const nextPointers = flattenToPointers(nextState);
+  const updates: Record<string, unknown> = {};
+
+  for (const path of new Set([
+    ...Object.keys(previousPointers),
+    ...Object.keys(nextPointers),
+  ])) {
+    const previousValue = previousPointers[path];
+    const nextValue = nextPointers[path];
+
+    if (path in nextPointers) {
+      if (!areExtractedValuesEqual(previousValue, nextValue)) {
+        updates[path] = nextValue;
+      }
+    } else {
+      updates[path] = undefined;
+    }
+  }
+
+  return updates;
 }
 
 export class AugmentationEngine {
@@ -114,6 +188,7 @@ export class AugmentationEngine {
     replacedElement.insertAdjacentElement("afterend", mountAnchor);
     replacedElement.style.display = "none";
     replacedElement.setAttribute("aria-hidden", "true");
+    const stateStore = createStateStore(data);
 
     let ui: ShadowRootContentScriptUi<{ root: ReactDOM.Root }> | undefined;
 
@@ -127,7 +202,7 @@ export class AugmentationEngine {
         onMount: (uiContainer) => {
           const root = ReactDOM.createRoot(uiContainer);
           root.render(
-            <StateProvider initialState={data}>
+            <StateProvider store={stateStore}>
               <VisibilityProvider>
                 <ActionProvider>
                   <Renderer spec={spec} registry={registry} />
@@ -173,6 +248,8 @@ export class AugmentationEngine {
       augmentation,
       extractor,
       spec,
+      stateStore,
+      lastScrapedData: data,
       originalElement: replacedElement,
       renderedElement:
         replacedElement.nextElementSibling instanceof HTMLElement
@@ -308,7 +385,7 @@ export class AugmentationEngine {
       this.persistedAugmentationObserverFrame = window.requestAnimationFrame(
         () => {
           this.persistedAugmentationObserverFrame = null;
-          void this.injectPersistedAugmentations();
+          void this.syncPersistedAugmentations();
         },
       );
     };
@@ -326,6 +403,40 @@ export class AugmentationEngine {
     this.persistedAugmentationObserver = observer;
     scheduleInjection();
     return observer;
+  }
+
+  private async syncPersistedAugmentations() {
+    this.refreshMountedAugmentationData();
+    await this.injectPersistedAugmentations();
+  }
+
+  private refreshMountedAugmentationData() {
+    for (const mountedAugmentation of this.mountedAugmentations.values()) {
+      if (!mountedAugmentation.extractor || !mountedAugmentation.stateStore) {
+        continue;
+      }
+
+      const { data } = validateAndParse(mountedAugmentation.extractor);
+      if (!data) {
+        continue;
+      }
+
+      const previousScrapedData = mountedAugmentation.lastScrapedData ?? {};
+      if (areExtractedValuesEqual(previousScrapedData, data)) {
+        continue;
+      }
+
+      const updates = createStoreUpdates(previousScrapedData, data);
+      if (Object.keys(updates).length === 0) {
+        continue;
+      }
+
+      mountedAugmentation.stateStore.update(updates);
+      mountedAugmentation.lastScrapedData = data;
+      logger.info("Updated augmentation renderer state after DOM re-scrape.", {
+        id: mountedAugmentation.augmentation.id,
+      });
+    }
   }
 
   list() {
@@ -402,6 +513,4 @@ export class AugmentationEngine {
       transition: "transform 80ms ease, width 80ms ease, height 80ms ease",
     });
   }
-
-  // TODO: Add selector-aware rendering and transformation hooks.
 }
