@@ -2,7 +2,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import type { ContentScriptContext, ShadowRootContentScriptUi } from "#imports";
 
+import type { AugmentationEngine } from "../services/augmentation-engine";
 import { logger } from "../utils/logger";
+import { AugmentationEngineProvider } from "./use-augmentation-engine";
 import type { SelectedElement } from "../types";
 import { FloatingWindow } from "./floating-window";
 
@@ -21,7 +23,10 @@ export class FloatingPopupController {
 
   private selectedElement: SelectedElement | null = null;
 
-  constructor(private readonly ctx: ContentScriptContext) {}
+  constructor(
+    private readonly ctx: ContentScriptContext,
+    private readonly augmentationEngine: AugmentationEngine,
+  ) {}
 
   async open(options?: OpenFloatingPopupOptions) {
     if (options && "selectedElement" in options) {
@@ -86,10 +91,12 @@ export class FloatingPopupController {
       onMount: (uiContainer) => {
         const root = ReactDOM.createRoot(uiContainer);
         root.render(
-          <FloatingWindow
-            selectedElement={this.selectedElement}
-            onClose={this.close}
-          />,
+          <AugmentationEngineProvider engine={this.augmentationEngine}>
+            <FloatingWindow
+              selectedElement={this.selectedElement}
+              onClose={this.close}
+            />
+          </AugmentationEngineProvider>,
         );
 
         return { root };
@@ -106,10 +113,12 @@ export class FloatingPopupController {
     }
 
     this.ui.mounted.root.render(
-      <FloatingWindow
-        selectedElement={this.selectedElement}
-        onClose={this.close}
-      />,
+      <AugmentationEngineProvider engine={this.augmentationEngine}>
+        <FloatingWindow
+          selectedElement={this.selectedElement}
+          onClose={this.close}
+        />
+      </AugmentationEngineProvider>,
     );
   }
 }

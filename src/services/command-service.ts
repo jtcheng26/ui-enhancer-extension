@@ -2,7 +2,6 @@ import type { AugmentationRequest, SelectedElement } from "../types";
 import { requestStore } from "../storage/request-store";
 import { settingsStore } from "../storage/settings-store";
 import { logger } from "../utils/logger";
-import { injectViaRegisteredAugmentation } from "../content/augmentation-injector";
 import { inspectSelectedDomTree } from "./dom-inspection-service";
 import { DOMExtractorSpec, ExtractedValue } from "./dom-extractor";
 import type { UISpec } from "../ai/providers/ai-provider";
@@ -83,37 +82,4 @@ export async function createUiSpec(
   }
 
   return res?.data ?? null;
-}
-
-export async function injectAugmentation(
-  selectedElement: SelectedElement | null,
-  spec: UISpec,
-) {
-  if (!selectedElement) {
-    logger.warn(
-      "Skipping augmentation inject because no selected element was provided.",
-    );
-    return;
-  }
-
-  const injectedLocally = await injectViaRegisteredAugmentation(
-    selectedElement.selector,
-    spec,
-  );
-
-  if (injectedLocally) {
-    return;
-  }
-
-  const res = await browser.runtime.sendMessage({
-    type: "augmentation/inject",
-    payload: {
-      selectedElement,
-      spec,
-    },
-  });
-
-  if (!res?.ok) {
-    logger.warn("Failed to inject augmentation.", res);
-  }
 }

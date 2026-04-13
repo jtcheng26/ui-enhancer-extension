@@ -191,7 +191,9 @@ function semanticValidate(spec: DOMExtractorSpec, errors: string[]): void {
   const frag = document.createDocumentFragment();
 
   if (!extractorKeys.has(spec.root.output)) {
-    errors.push(`root.output "${spec.root.output}" is not defined in extractors`);
+    errors.push(
+      `root.output "${spec.root.output}" is not defined in extractors`,
+    );
   }
 
   if (spec.root.selector) {
@@ -221,7 +223,12 @@ function semanticValidate(spec: DOMExtractorSpec, errors: string[]): void {
             }
 
             if (source.type === "exists" && source.filter) {
-              validateFilter(source.filter, `${sourcePath}.filter`, frag, errors);
+              validateFilter(
+                source.filter,
+                `${sourcePath}.filter`,
+                frag,
+                errors,
+              );
             }
 
             if (source.type === "regex") {
@@ -245,7 +252,9 @@ function semanticValidate(spec: DOMExtractorSpec, errors: string[]): void {
           });
 
           if (!extractorKeys.has(field.item)) {
-            errors.push(`${fieldPath}.item references unknown extractor "${field.item}"`);
+            errors.push(
+              `${fieldPath}.item references unknown extractor "${field.item}"`,
+            );
           }
 
           if (field.filter) {
@@ -396,7 +405,8 @@ function applyDerive(value: ExtractedValue, fn: DeriveFn): ExtractedValue {
 
 function getScopeText(scope: Element | Document): string {
   return (
-    (scope instanceof Element ? scope.textContent : scope.body?.textContent) ?? ""
+    (scope instanceof Element ? scope.textContent : scope.body?.textContent) ??
+    ""
   );
 }
 
@@ -491,7 +501,9 @@ function executeValueSource(
   }
 }
 
-function defaultValueForField(field: Extract<ExtractorField, { kind: "value" }>) {
+function defaultValueForField(
+  field: Extract<ExtractorField, { kind: "value" }>,
+) {
   if (field.nullable) {
     return null;
   }
@@ -561,7 +573,9 @@ function executeField(
 
       let elements = queryFirstAll(scope, field.selectors);
       if (field.filter) {
-        elements = elements.filter((element) => matchesFilter(element, field.filter!));
+        elements = elements.filter((element) =>
+          matchesFilter(element, field.filter!),
+        );
       }
 
       if (field.exclude) {
@@ -641,7 +655,10 @@ executeExtractor = (
 export function parseSpec(
   spec: DOMExtractorSpec,
   rootEl: Document | Element = document,
-): Record<string, ExtractedValue> | null {
+): {
+  data: Record<string, ExtractedValue> | null;
+  root: Element | Document | null;
+} {
   let scope: Document | Element = rootEl;
 
   if (spec.root.selector) {
@@ -656,7 +673,7 @@ export function parseSpec(
 
     if (!found) {
       if (spec.root.required) {
-        return null;
+        return { data: null, root: null };
       }
     } else {
       scope = found;
@@ -670,22 +687,29 @@ export function parseSpec(
     );
   }
 
-  return executeExtractor(scope, rootExtractor, spec.extractors);
+  return {
+    data: executeExtractor(scope, rootExtractor, spec.extractors),
+    root: scope,
+  };
 }
 
 export function validateAndParse(
   raw: unknown,
   rootEl: Document | Element = document,
-): { data: Record<string, ExtractedValue> | null; errors: string[] } {
+): {
+  data: Record<string, ExtractedValue> | null;
+  root: Element | Document | null;
+  errors: string[];
+} {
   const validation = validateSpec(raw);
   if (!validation.valid) {
-    return { data: null, errors: validation.errors };
+    return { data: null, root: rootEl, errors: validation.errors };
   }
 
   try {
-    const data = parseSpec(raw as DOMExtractorSpec, rootEl);
-    return { data, errors: [] };
+    const { data, root } = parseSpec(raw as DOMExtractorSpec, rootEl);
+    return { data, root, errors: [] };
   } catch (error) {
-    return { data: null, errors: [(error as Error).message] };
+    return { data: null, root: rootEl, errors: [(error as Error).message] };
   }
 }

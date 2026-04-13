@@ -1,3 +1,4 @@
+import type { UISpec } from "@/ai/providers/ai-provider";
 import type {
   DOMExtractorSpec,
   ExtractedValue,
@@ -62,6 +63,25 @@ export interface InjectedAugmentation {
   status: "injected" | "removed";
 }
 
+export interface PersistedAugmentation {
+  id: string;
+  label: string;
+  pageUrl: string;
+  enabled: boolean;
+  extractor: DOMExtractorSpec;
+  spec: UISpec;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PersistedAugmentationStore {
+  list(): Promise<PersistedAugmentation[]>;
+  upsert(augmentation: PersistedAugmentation): Promise<PersistedAugmentation>;
+  setEnabled(id: string, enabled: boolean): Promise<PersistedAugmentation | null>;
+  remove(id: string): Promise<void>;
+  clear(): Promise<void>;
+}
+
 export interface ParsedSchema {
   id: string;
   sourceUrl: string;
@@ -121,8 +141,8 @@ export type ExtensionRuntimeMessage =
   | {
       type: "augmentation/inject";
       payload: {
-        selectedElement: SelectedElement;
-        spec: unknown;
+        extractor: DOMExtractorSpec;
+        spec: UISpec;
       };
     }
   | {

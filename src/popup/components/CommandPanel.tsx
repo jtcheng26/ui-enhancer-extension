@@ -2,21 +2,23 @@ import { useEffect, useState, type FormEvent } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 
 import { discoverAndStoreSchema } from "../../schema/schema-service";
-import { requestStore } from "../../storage/request-store";
+import { persistedAugmentationStore } from "../../storage/persisted-augmentation-store";
 import { settingsStore } from "../../storage/settings-store";
 import {
   createUiSpec,
-  injectAugmentation,
   submitAugmentationRequest,
 } from "../../services/command-service";
 import Example from "../../schema/dom-extraction-example.json";
 import type {
   AugmentationRequest,
   ExtensionSettings,
+  PersistedAugmentation,
   SchemaDiscoveryResult,
   SelectedElement,
 } from "../../types";
+import type { DOMExtractorSpec } from "@/services/dom-extractor";
 import { validateAndParse } from "@/services/dom-extractor";
+import { useAugmentationEngine } from "@/content/use-augmentation-engine";
 import { logger } from "@/utils/logger";
 
 interface CommandPanelProps {
@@ -59,9 +61,14 @@ export function CommandPanel({
   onRequestClose,
 }: CommandPanelProps) {
   const [prompt, setPrompt] = useState("");
-  const [history, setHistory] = useState<AugmentationRequest[]>([]);
+  const [persistedAugmentations, setPersistedAugmentations] = useState<
+    PersistedAugmentation[]
+  >([]);
   const [settings, setSettings] = useState<ExtensionSettings | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingAugmentationId, setPendingAugmentationId] = useState<
+    string | null
+  >(null);
   const [requestSettings, setRequestSettings] = useState<RequestSettings>({
     strategy: "rerender",
   });
@@ -69,15 +76,21 @@ export function CommandPanel({
 
   const isPopup = surface === "popup";
   const isFloating = mode === "floating";
+  const augmentationEngine = useAugmentationEngine();
+
+  async function refreshPersistedAugmentations() {
+    const storedAugmentations = await persistedAugmentationStore.list();
+    setPersistedAugmentations(storedAugmentations);
+  }
 
   useEffect(() => {
     void (async () => {
-      const [storedHistory, storedSettings] = await Promise.all([
-        requestStore.list(),
+      const [storedAugmentations, storedSettings] = await Promise.all([
+        persistedAugmentationStore.list(),
         settingsStore.get(),
       ]);
 
-      setHistory(storedHistory);
+      setPersistedAugmentations(storedAugmentations);
       setSettings(storedSettings);
       setPrompt(storedSettings.lastCommand ?? "");
     })();
@@ -91,15 +104,12 @@ export function CommandPanel({
     }
 
     setIsSubmitting(true);
-    // const res = Example;
-    // await submitAugmentationRequest(prompt, surface, {
+    const extractor = Example as DOMExtractorSpec;
+    // const extractor = await submitAugmentationRequest(prompt, surface, {
     //   selectedElement,
     // });
-    const res = await submitAugmentationRequest(prompt, surface, {
-      selectedElement,
-    });
-    if (res) {
-      const parsed = validateAndParse(res);
+    if (extractor) {
+      const parsed = validateAndParse(extractor);
 
       if (parsed.data) {
         const uiSpec = await createUiSpec(prompt, surface, {
@@ -109,8 +119,13 @@ export function CommandPanel({
 
         logger.info("Generated UI spec.", uiSpec);
 
-        if (uiSpec) {
-          await injectAugmentation(selectedElement, uiSpec);
+        if (uiSpec && augmentationEngine) {
+          const injectedAugmentation = await augmentationEngine.inject(
+            extractor,
+            uiSpec,
+          );
+
+          setPendingAugmentationId(injectedAugmentation?.id ?? null);
           void handleSettingsToggle("selectionModeEnabled");
         }
       } else {
@@ -126,6 +141,47 @@ export function CommandPanel({
     // setHistory(storedHistory);
     // setPrompt(request.prompt);
     setIsSubmitting(false);
+  }
+
+  async function handleConfirmAugmentation() {
+    if (!augmentationEngine || !pendingAugmentationId) return;
+
+    await augmentationEngine.persistAugmentation(pendingAugmentationId);
+    await refreshPersistedAugmentations();
+    setPendingAugmentationId(null);
+  }
+
+  async function handleCancelAugmentation() {
+    if (!augmentationEngine || !pendingAugmentationId) return;
+
+    augmentationEngine.remove(pendingAugmentationId);
+    setPendingAugmentationId(null);
+  }
+
+  async function handlePersistedToggle(augmentation: PersistedAugmentation) {
+    const nextEnabled = !augmentation.enabled;
+    await persistedAugmentationStore.setEnabled(augmentation.id, nextEnabled);
+
+    if (augmentationEngine) {
+      if (nextEnabled) {
+        await augmentationEngine.injectPersistedAugmentations();
+      } else {
+        augmentationEngine.remove(augmentation.id);
+      }
+    }
+
+    await refreshPersistedAugmentations();
+  }
+
+  async function handlePersistedDelete(augmentation: PersistedAugmentation) {
+    await persistedAugmentationStore.remove(augmentation.id);
+    augmentationEngine?.remove(augmentation.id);
+
+    if (pendingAugmentationId === augmentation.id) {
+      setPendingAugmentationId(null);
+    }
+
+    await refreshPersistedAugmentations();
   }
 
   async function handleSettingsToggle(
@@ -317,37 +373,84 @@ export function CommandPanel({
               Clear
             </button>
           </div>
+
+          {pendingAugmentationId ? (
+            <div className="flex flex-wrap gap-2 pt-2">
+              <button
+                className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-emerald-500 cursor-pointer"
+                type="button"
+                onClick={() => void handleConfirmAugmentation()}
+              >
+                Confirm
+              </button>
+              <button
+                className="inline-flex items-center justify-center rounded-full bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-200 cursor-pointer"
+                type="button"
+                onClick={() => void handleCancelAugmentation()}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : null}
         </form>
 
-        {/* ── Past creations ── */}
+        {/* ── Persisted augmentations ── */}
         <section className="grid gap-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-tight text-slate-950">
-              Past Creations
+              Persisted Augmentations
             </h2>
             <span className="inline-flex min-w-8 items-center justify-center rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-800">
-              {history.length}
+              {persistedAugmentations.length}
             </span>
           </div>
 
           <div className="grid max-h-56 gap-2 overflow-auto">
-            {history.length === 0 ? (
+            {persistedAugmentations.length === 0 ? (
               <div className="rounded-2xl border border-slate-900/8 bg-slate-50/80 p-4">
                 <p className="text-sm leading-6 text-slate-600">
-                  No creations yet. Submit one above!
+                  No persisted augmentations yet. Create one above and confirm it.
                 </p>
               </div>
             ) : (
-              history.map((item) => (
+              persistedAugmentations.map((item) => (
                 <article
                   key={item.id}
-                  className="grid gap-1 rounded-2xl border border-sky-100 bg-sky-50/70 p-3"
+                  className="grid gap-2 rounded-2xl border border-sky-100 bg-sky-50/70 p-3"
                 >
-                  <p className="text-sm text-slate-900">{item.prompt}</p>
-                  <span className="text-xs text-slate-500">
-                    {item.source} • {item.status} •{" "}
-                    {new Date(item.createdAt).toLocaleString()}
-                  </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-900">
+                        {item.label}
+                      </p>
+                      <span className="text-xs text-slate-500">
+                        {new Date(item.updatedAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <button
+                        className={`inline-flex items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition hover:-translate-y-0.5 cursor-pointer ${
+                          item.enabled
+                            ? "bg-sky-200 text-sky-900 hover:bg-sky-300"
+                            : "bg-slate-200 text-slate-700 hover:bg-slate-300"
+                        }`}
+                        type="button"
+                        onClick={() => void handlePersistedToggle(item)}
+                      >
+                        {item.enabled ? "Disable" : "Enable"}
+                      </button>
+                      <button
+                        className="inline-flex items-center justify-center rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-200 cursor-pointer"
+                        type="button"
+                        onClick={() => void handlePersistedDelete(item)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                  <p className="truncate text-xs text-slate-500">
+                    {item.extractor.root.selector || item.pageUrl}
+                  </p>
                 </article>
               ))
             )}
