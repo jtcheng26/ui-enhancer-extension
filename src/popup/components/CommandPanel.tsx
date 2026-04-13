@@ -55,14 +55,14 @@ const STRATEGY_OPTIONS: {
 }[] = [
   {
     value: "rerender",
-    label: "Re-render components",
-    description: "Modify and re-render existing UI components directly",
+    label: "Page update",
+    description: "Create a new interface directly on the current page",
     icon: "🎨",
   },
   {
     value: "schema",
-    label: "API schema",
-    description: "Use the page's API schema to inform augmentations",
+    label: "Data-aware",
+    description: "Use available page data to shape the generated experience",
     icon: "📐",
   },
 ];
@@ -271,10 +271,15 @@ export function CommandPanel({
 
   if (previewVariant === "prompt" && isPreviewMode) {
     return (
-      <div className="flex justify-between items-center p-3">
-        <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-500 pl-3">
-          Preview
-        </span>
+      <div className="flex items-center justify-between gap-3 p-3">
+        <div className="grid gap-0.5 pl-3">
+          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-500">
+            Review
+          </span>
+          <span className="text-sm font-medium text-white">
+            Keep this page update?
+          </span>
+        </div>
 
         <div className="flex flex-wrap gap-2">
           <button
@@ -282,14 +287,14 @@ export function CommandPanel({
             type="button"
             onClick={() => void handleConfirmAugmentation()}
           >
-            Confirm
+            Save
           </button>
           <button
             className="inline-flex items-center justify-center rounded-full bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-200 cursor-pointer"
             type="button"
             onClick={() => void handleDeletePreviewAugmentation()}
           >
-            Delete
+            Discard
           </button>
         </div>
       </div>
@@ -304,14 +309,15 @@ export function CommandPanel({
     }[] = [
       {
         phase: "extractor",
-        label: "Generating scraper",
+        label: "Reading the page",
         detail:
-          "Analyzing the DOM snapshot and producing a data extraction spec.",
+          "Understanding the current page structure and identifying the right data to use.",
       },
       {
         phase: "ui",
-        label: "Generating UI components",
-        detail: "Turning extracted data into a rendered component spec.",
+        label: "Designing the view",
+        detail:
+          "Building the interface and preparing it for preview on the page.",
       },
     ];
 
@@ -333,7 +339,7 @@ export function CommandPanel({
           <div className="grid gap-1 text-center">
             <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-sky-100 border-t-sky-500" />
             <h1 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-              Creating augmentation
+              Preparing your preview
             </h1>
           </div>
 
@@ -383,10 +389,10 @@ export function CommandPanel({
           {/* Extracted data preview */}
           {data && (
             <div className="grid gap-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                Extracted data
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Page Data
               </p>
-              <pre className="max-h-48 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3 text-[11px] leading-5 text-emerald-400">
+              <pre className="max-h-48 overflow-auto rounded-2xl border border-slate-200 bg-slate-950 p-3 text-[11px] leading-5 text-emerald-400 shadow-inner">
                 {JSON.stringify(data, null, 2)}
               </pre>
             </div>
@@ -399,7 +405,7 @@ export function CommandPanel({
               type="button"
               onClick={handleCancelLoading}
             >
-              Cancel
+              Stop
             </button>
           </div>
         </div>
@@ -418,14 +424,14 @@ export function CommandPanel({
       >
         <header className="grid gap-2">
           <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700">
-            Experimental Prototype
+            Live Preview Studio
           </span>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
-            AI UI augmentation workspace
+            Shape this page with a prompt
           </h1>
           <p className="text-sm leading-6 text-slate-600">
-            This is intentionally a stubbed command surface. Requests are stored
-            locally for now and routed to future AI tooling later.
+            Describe what you want to see, preview it on the page, and save the
+            versions you want to keep.
           </p>
         </header>
 
@@ -443,14 +449,14 @@ export function CommandPanel({
             <p
               className={`text-xs font-semibold ${settings?.selectionModeEnabled ? "text-sky-800" : "text-slate-700"}`}
             >
-              Element selection mode
+              Choose a target area
             </p>
             <p
               className={`text-[11px] leading-4 ${settings?.selectionModeEnabled ? "text-sky-600" : "text-slate-500"}`}
             >
               {settings?.selectionModeEnabled
-                ? "Active — click any element to target it, hover highlights enabled"
-                : "Inactive — enable to click and highlight page elements"}
+                ? "On — click any part of the page to aim this request"
+                : "Off — turn this on to pick a specific part of the page"}
             </p>
           </div>
           <div
@@ -468,13 +474,13 @@ export function CommandPanel({
         {selectedElement ? (
           <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-3">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">
-              Current selection
+              Selected area
             </p>
             <p className="mt-1 text-sm font-medium text-slate-900">
               {selectedElement.selector}
             </p>
             <p className="mt-1 line-clamp-2 text-sm text-slate-600">
-              {selectedElement.textPreview || "No text preview captured yet."}
+              {selectedElement.textPreview || "No preview text available yet."}
             </p>
           </div>
         ) : null}
@@ -483,11 +489,11 @@ export function CommandPanel({
         <form className="grid gap-2" onSubmit={handleSubmit}>
           <label className="grid gap-2">
             <span className="text-xs font-semibold tracking-wide text-slate-700">
-              Natural language request
+              What would you like to change?
             </span>
             <textarea
               className="min-h-32 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-4 focus:ring-sky-100"
-              placeholder="Example: Add a compact summary card beside the selected checkout section."
+              placeholder="Example: Add a compact summary panel beside the selected section."
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
             />
@@ -502,7 +508,7 @@ export function CommandPanel({
                 ▶
               </span>
               <span className="text-xs font-semibold text-slate-500">
-                Request options
+                Generation options
               </span>
               {/* Active summary pill shown when collapsed */}
               {!settingsOpen && (
@@ -521,7 +527,7 @@ export function CommandPanel({
                 {/* Strategy picker */}
                 <div className="grid gap-1.5">
                   <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Augmentation strategy
+                    Creation mode
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     {STRATEGY_OPTIONS.map((option) => {
@@ -570,23 +576,23 @@ export function CommandPanel({
               type="submit"
               disabled={isSubmitting}
             >
-              {isSubmitting ? "Creating..." : "Create"}
+              {isSubmitting ? "Building..." : "Generate"}
             </button>
             <button
               className="inline-flex items-center justify-center rounded-full bg-sky-100 px-4 py-2 text-sm font-medium text-slate-800 transition hover:-translate-y-0.5 hover:bg-sky-200 cursor-pointer"
               type="button"
               onClick={() => setPrompt("")}
             >
-              Clear
+              Reset
             </button>
           </div>
         </form>
 
-        {/* ── Persisted augmentations ── */}
+        {/* ── Saved enhancements ── */}
         <section className="grid gap-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-tight text-slate-950">
-              Persisted Augmentations
+              Saved versions
             </h2>
             <span className="inline-flex min-w-8 items-center justify-center rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-amber-800">
               {persistedAugmentations.length}
@@ -597,8 +603,8 @@ export function CommandPanel({
             {persistedAugmentations.length === 0 ? (
               <div className="rounded-2xl border border-slate-900/8 bg-slate-50/80 p-4">
                 <p className="text-sm leading-6 text-slate-600">
-                  No persisted augmentations yet. Create one above and confirm
-                  it.
+                  No saved versions yet. Generate a preview above and save the
+                  ones you want to keep.
                 </p>
               </div>
             ) : (
@@ -626,7 +632,7 @@ export function CommandPanel({
                         type="button"
                         onClick={() => void handlePersistedToggle(item)}
                       >
-                        {item.enabled ? "Disable" : "Enable"}
+                        {item.enabled ? "Hide" : "Show"}
                       </button>
                       <button
                         className="inline-flex items-center justify-center rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-200 cursor-pointer"
