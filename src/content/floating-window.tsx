@@ -22,6 +22,7 @@ export function FloatingWindow({
   selectedElement,
   onClose,
 }: FloatingWindowProps) {
+  const [isLoading, setIsLoading] = useState(false);
   const [position, setPosition] = useState(DEFAULT_POSITION);
   const [size, setSize] = useState(DEFAULT_SIZE);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
@@ -41,6 +42,7 @@ export function FloatingWindow({
   // ── Drag ────────────────────────────────────────────────────────────────────
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (isLoading) return;
     if ((event.target as HTMLElement).closest("button")) return;
 
     dragOffsetRef.current = {
@@ -51,6 +53,7 @@ export function FloatingWindow({
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (isLoading) return;
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
 
     setPosition({
@@ -83,6 +86,7 @@ export function FloatingWindow({
   }
 
   function handleResizePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (isLoading) return;
     if (
       !event.currentTarget.hasPointerCapture(event.pointerId) ||
       !resizeRef.current
@@ -132,6 +136,7 @@ export function FloatingWindow({
           <div className="relative overflow-hidden rounded-[22px] bg-slate-800">
             <PopupApp
               mode="floating"
+              onLoadingStateChange={setIsLoading}
               pendingAugmentationId={pendingAugmentationId}
               previewVariant="prompt"
               onPendingAugmentationChange={setPendingAugmentationId}
@@ -146,62 +151,76 @@ export function FloatingWindow({
   }
 
   return (
-    <div
-      className="fixed left-0 top-0 z-[2147483647]"
-      style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
-    >
+    <>
+      {isLoading ? (
+        <div className="fixed inset-0 z-[2147483645] bg-white/18 backdrop-blur-md" />
+      ) : null}
       <div
-        className="rounded-[30px] bg-slate-900/20 p-[6px] backdrop-blur-md shadow-[0_24px_60px_rgba(15,23,42,0.28)]"
-        style={{ width: size.width, height: size.height }}
+        className="fixed left-0 top-0 z-[2147483647]"
+        style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
       >
-        <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[28px] bg-white">
-          <div
-            className="flex shrink-0 cursor-move items-center justify-between border-b border-slate-200/80 bg-slate-950 px-4 py-3 text-white"
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-          >
-            <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-200">
-                Workspace
-              </p>
+        <div
+          className="rounded-[30px] bg-slate-900/20 p-[6px] backdrop-blur-md shadow-[0_24px_60px_rgba(15,23,42,0.28)]"
+          style={{ width: size.width, height: size.height }}
+        >
+          <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[28px] bg-white">
+            <div
+              className={`flex shrink-0 items-center justify-between border-b border-slate-200/80 bg-slate-950 px-4 py-3 text-white ${
+                isLoading ? "cursor-default" : "cursor-move"
+              }`}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+            >
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-200">
+                  Workspace
+                </p>
+              </div>
+
+              <button
+                className="z-100 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-lg leading-none text-white transition hover:bg-white/20"
+                type="button"
+                onClick={onClose}
+              >
+                ×
+              </button>
             </div>
 
-            <button
-              className="z-100 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-lg leading-none text-white transition hover:bg-white/20"
-              type="button"
-              onClick={onClose}
-            >
-              ×
-            </button>
-          </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <PopupApp
+                mode="floating"
+                onLoadingStateChange={setIsLoading}
+                pendingAugmentationId={pendingAugmentationId}
+                previewVariant="full"
+                onPendingAugmentationChange={setPendingAugmentationId}
+                selectedElement={selectedElement}
+                onPreviewModeChange={setIsPreviewMode}
+                onRequestClose={onClose}
+              />
+            </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <PopupApp
-              mode="floating"
-              pendingAugmentationId={pendingAugmentationId}
-              previewVariant="full"
-              onPendingAugmentationChange={setPendingAugmentationId}
-              selectedElement={selectedElement}
-              onPreviewModeChange={setIsPreviewMode}
-              onRequestClose={onClose}
+            <div
+              className={`absolute right-0 top-0 h-full w-2 ${
+                isLoading ? "cursor-default" : "cursor-ew-resize"
+              }`}
+              {...resizeHandleProps("e")}
+            />
+            <div
+              className={`absolute bottom-0 left-0 h-2 w-full ${
+                isLoading ? "cursor-default" : "cursor-s-resize"
+              }`}
+              {...resizeHandleProps("s")}
+            />
+            <div
+              className={`absolute bottom-0 right-0 h-4 w-4 ${
+                isLoading ? "cursor-default" : "cursor-se-resize"
+              }`}
+              {...resizeHandleProps("se")}
             />
           </div>
-
-          <div
-            className="absolute right-0 top-0 h-full w-2 cursor-ew-resize"
-            {...resizeHandleProps("e")}
-          />
-          <div
-            className="absolute bottom-0 left-0 h-2 w-full cursor-s-resize"
-            {...resizeHandleProps("s")}
-          />
-          <div
-            className="absolute bottom-0 right-0 h-4 w-4 cursor-se-resize"
-            {...resizeHandleProps("se")}
-          />
         </div>
       </div>
-    </div>
+    </>
   );
 }

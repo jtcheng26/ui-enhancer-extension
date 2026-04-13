@@ -3,6 +3,7 @@ import { CommandPanel } from './components/CommandPanel';
 
 interface PopupAppProps {
   mode?: 'standalone' | 'floating';
+  onLoadingStateChange?: (enabled: boolean) => void;
   previewVariant?: 'full' | 'prompt';
   pendingAugmentationId?: string | null;
   selectedElement?: SelectedElement | null;
@@ -13,6 +14,7 @@ interface PopupAppProps {
 
 export function PopupApp({
   mode = 'standalone',
+  onLoadingStateChange,
   previewVariant = 'full',
   pendingAugmentationId = null,
   selectedElement = null,
@@ -23,6 +25,7 @@ export function PopupApp({
   return (
     <CommandPanel
       mode={mode}
+      onLoadingStateChange={onLoadingStateChange}
       pendingAugmentationId={pendingAugmentationId}
       previewVariant={previewVariant}
       onPendingAugmentationChange={onPendingAugmentationChange}

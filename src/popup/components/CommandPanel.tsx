@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import * as Collapsible from "@radix-ui/react-collapsible";
 
 import { discoverAndStoreSchema } from "../../schema/schema-service";
@@ -16,13 +16,17 @@ import type {
   SchemaDiscoveryResult,
   SelectedElement,
 } from "../../types";
-import type { DOMExtractorSpec } from "@/services/dom-extractor";
+import type {
+  DOMExtractorSpec,
+  ExtractedValue,
+} from "@/services/dom-extractor";
 import { validateAndParse } from "@/services/dom-extractor";
 import { useAugmentationEngine } from "@/content/use-augmentation-engine";
 import { logger } from "@/utils/logger";
 
 interface CommandPanelProps {
   surface: "popup" | "sidepanel";
+  onLoadingStateChange?: (enabled: boolean) => void;
   mode?: "standalone" | "floating";
   previewVariant?: "full" | "prompt";
   pendingAugmentationId?: string | null;
@@ -37,6 +41,11 @@ type AugmentationStrategy = "schema" | "rerender";
 interface RequestSettings {
   strategy: AugmentationStrategy;
 }
+
+type GenerationStep =
+  | { phase: "extractor" }
+  | { phase: "parsing"; data: Record<string, ExtractedValue> }
+  | { phase: "ui"; data: Record<string, ExtractedValue> };
 
 const STRATEGY_OPTIONS: {
   value: AugmentationStrategy;
@@ -60,6 +69,7 @@ const STRATEGY_OPTIONS: {
 
 export function CommandPanel({
   surface,
+  onLoadingStateChange,
   mode = "standalone",
   previewVariant = "full",
   pendingAugmentationId: externalPendingAugmentationId = null,
@@ -73,11 +83,15 @@ export function CommandPanel({
     PersistedAugmentation[]
   >([]);
   const [settings, setSettings] = useState<ExtensionSettings | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [generationStep, setGenerationStep] = useState<GenerationStep | null>(
+    null,
+  );
+  const isSubmitting = generationStep !== null;
   const [requestSettings, setRequestSettings] = useState<RequestSettings>({
     strategy: "rerender",
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const submissionVersionRef = useRef(0);
 
   const isPopup = surface === "popup";
   const isFloating = mode === "floating";
@@ -112,6 +126,10 @@ export function CommandPanel({
   }, [isPreviewMode, onPreviewModeChange]);
 
   useEffect(() => {
+    onLoadingStateChange?.(isSubmitting);
+  }, [isSubmitting, onLoadingStateChange]);
+
+  useEffect(() => {
     if (!augmentationEngine || !pendingAugmentationId) {
       augmentationEngine?.clearHighlightedAugmentation();
       return;
@@ -131,44 +149,67 @@ export function CommandPanel({
       return;
     }
 
-    setIsSubmitting(true);
-    const extractor = Example as DOMExtractorSpec;
-    // const extractor = await submitAugmentationRequest(prompt, surface, {
-    //   selectedElement,
-    // });
-    if (extractor) {
-      const parsed = validateAndParse(extractor);
+    const submissionVersion = submissionVersionRef.current + 1;
+    submissionVersionRef.current = submissionVersion;
+    setGenerationStep({ phase: "extractor" });
+    try {
+      // const extractor = Example as DOMExtractorSpec;
+      const extractor = await submitAugmentationRequest(prompt, surface, {
+        selectedElement,
+      });
 
-      if (parsed.data) {
-        const uiSpec = await createUiSpec(prompt, surface, {
-          selectedElement,
-          data: parsed.data,
-        });
+      if (submissionVersion !== submissionVersionRef.current) {
+        return;
+      }
 
-        logger.info("Generated UI spec.", uiSpec);
+      if (extractor) {
+        const parsed = validateAndParse(extractor);
 
-        if (uiSpec && augmentationEngine) {
-          const injectedAugmentation = await augmentationEngine.inject(
-            extractor,
-            uiSpec,
+        if (parsed.data) {
+          setGenerationStep({ phase: "ui", data: parsed.data });
+          const uiSpec = await createUiSpec(prompt, surface, {
+            selectedElement,
+            data: parsed.data,
+          });
+
+          if (submissionVersion !== submissionVersionRef.current) {
+            return;
+          }
+
+          logger.info("Generated UI spec.", uiSpec);
+
+          if (uiSpec && augmentationEngine) {
+            const injectedAugmentation = await augmentationEngine.inject(
+              extractor,
+              uiSpec,
+            );
+
+            if (submissionVersion !== submissionVersionRef.current) {
+              return;
+            }
+
+            updatePendingAugmentationId(injectedAugmentation?.id ?? null);
+            void handleSettingsToggle("selectionModeEnabled");
+          }
+        } else {
+          logger.warn(
+            "Skipping UI spec generation because extractor parsing failed.",
+            {
+              errors: parsed.errors,
+            },
           );
-
-          updatePendingAugmentationId(injectedAugmentation?.id ?? null);
-          void handleSettingsToggle("selectionModeEnabled");
         }
-      } else {
-        logger.warn(
-          "Skipping UI spec generation because extractor parsing failed.",
-          {
-            errors: parsed.errors,
-          },
-        );
+      }
+    } finally {
+      if (submissionVersion === submissionVersionRef.current) {
+        setGenerationStep(null);
       }
     }
-    // const storedHistory = await requestStore.list();
-    // setHistory(storedHistory);
-    // setPrompt(request.prompt);
-    setIsSubmitting(false);
+  }
+
+  function handleCancelLoading() {
+    submissionVersionRef.current += 1;
+    setGenerationStep(null);
   }
 
   async function handleConfirmAugmentation() {
@@ -250,6 +291,117 @@ export function CommandPanel({
           >
             Delete
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (generationStep) {
+    const steps: {
+      phase: GenerationStep["phase"];
+      label: string;
+      detail: string;
+    }[] = [
+      {
+        phase: "extractor",
+        label: "Generating scraper",
+        detail:
+          "Analyzing the DOM snapshot and producing a data extraction spec.",
+      },
+      {
+        phase: "ui",
+        label: "Generating UI components",
+        detail: "Turning extracted data into a rendered component spec.",
+      },
+    ];
+
+    const currentIndex = steps.findIndex(
+      (s) => s.phase === generationStep.phase,
+    );
+    const data = "data" in generationStep ? generationStep.data : null;
+
+    return (
+      <div className={wrapperClassName}>
+        <div
+          className={`grid gap-5 ${
+            isFloating
+              ? "rounded-b-[28px] bg-white/95 p-5"
+              : "rounded-[28px] border border-slate-900/10 bg-white/80 p-5 shadow-[0_18px_40px_rgba(50,50,93,0.08)] backdrop-blur-sm"
+          }`}
+        >
+          {/* Header */}
+          <div className="grid gap-1 text-center">
+            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-sky-100 border-t-sky-500" />
+            <h1 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
+              Creating augmentation
+            </h1>
+          </div>
+
+          {/* Steps */}
+          <ol className="grid gap-2">
+            {steps.map((step, i) => {
+              const isDone = i < currentIndex;
+              const isActive = i === currentIndex;
+
+              return (
+                <li
+                  key={step.phase}
+                  className={`flex items-start gap-3 rounded-2xl border p-3 transition-colors ${
+                    isActive
+                      ? "border-sky-200 bg-sky-50"
+                      : isDone
+                        ? "border-emerald-100 bg-emerald-50/60"
+                        : "border-slate-100 bg-slate-50/60 opacity-40"
+                  }`}
+                >
+                  <span className="mt-0.5 text-base leading-none">
+                    {isDone ? "✅" : isActive ? "⏳" : "○"}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={`text-xs font-semibold ${
+                        isActive
+                          ? "text-sky-800"
+                          : isDone
+                            ? "text-emerald-800"
+                            : "text-slate-400"
+                      }`}
+                    >
+                      {step.label}
+                    </p>
+                    {isActive && (
+                      <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
+                        {step.detail}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+
+          {/* Extracted data preview */}
+          {data && (
+            <div className="grid gap-1.5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                Extracted data
+              </p>
+              <pre className="max-h-48 overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-3 text-[11px] leading-5 text-emerald-400">
+                {JSON.stringify(data, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {/* Cancel */}
+          <div className="flex justify-center">
+            <button
+              className="inline-flex items-center justify-center rounded-full bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-200 cursor-pointer"
+              type="button"
+              onClick={handleCancelLoading}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
     );
