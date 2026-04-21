@@ -1,6 +1,5 @@
 import type { ContentScriptContext } from "#imports";
 
-import type { UISpec } from "../ai/providers/ai-provider";
 import type { ExtensionRuntimeMessage } from "../types";
 import { persistedAugmentationStore } from "../storage/persisted-augmentation-store";
 import { settingsStore } from "../storage/settings-store";
@@ -28,9 +27,9 @@ export async function initializeContentPrototype(ctx: ContentScriptContext) {
   const highlighter = new HoverHighlighter({
     overlay,
     onHover(selectedElement) {
-      logger.info("Hovered element placeholder event.", {
-        selector: selectedElement.selector,
-      });
+      // logger.info("Hovered element placeholder event.", {
+      //   selector: selectedElement.selector,
+      // });
     },
   });
 
@@ -65,7 +64,8 @@ export async function initializeContentPrototype(ctx: ContentScriptContext) {
         try {
           void (await augmentationEngine.inject(
             message.payload.extractor,
-            message.payload.spec as UISpec,
+            message.payload.spec,
+            message.payload.renderSystemId,
           ));
           sendResponse({ ok: true });
         } catch (e) {

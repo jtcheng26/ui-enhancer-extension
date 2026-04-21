@@ -1,11 +1,11 @@
-import { settingsStore } from '../storage/settings-store';
-import { logger } from '../utils/logger';
-import { registerMessageRouter } from './message-router';
+import { settingsStore } from "../storage/settings-store";
+import { logger } from "../utils/logger";
+import { registerMessageRouter } from "./message-router";
 
 export function initializeBackgroundRuntime() {
   browser.runtime.onInstalled.addListener(async (details) => {
     const settings = await settingsStore.get();
-    logger.info('Extension installed or updated.', {
+    logger.info("Extension installed or updated.", {
       reason: details.reason,
       settings,
     });
@@ -18,23 +18,39 @@ export function initializeBackgroundRuntime() {
 
     try {
       await browser.tabs.sendMessage(tab.id, {
-        type: 'floating-ui/open',
+        type: "floating-ui/open",
         payload: {
-          source: 'toolbar',
+          source: "toolbar",
           selectedElement: null,
         },
       });
-      logger.info('Requested in-page popup open from toolbar click.', {
+      logger.info("Requested in-page popup open from toolbar click.", {
         tabId: tab.id,
       });
     } catch (error) {
-      logger.warn('Unable to open in-page popup from toolbar click.', {
+      logger.warn("Unable to open in-page popup from toolbar click.", {
         tabId: tab.id,
-        error: error instanceof Error ? error.message : 'Unknown tab messaging error',
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unknown tab messaging error",
       });
     }
   });
 
+  // background.js
+  browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === "CAPTURE") {
+      browser.tabs.captureVisibleTab(
+        { format: "jpeg", quality: 30 },
+        (dataUrl) => {
+          sendResponse({ dataUrl });
+        },
+      );
+      return true; // keeps the message channel open for the async response
+    }
+  });
+
   registerMessageRouter();
-  logger.info('Background runtime initialized.');
+  logger.info("Background runtime initialized.");
 }

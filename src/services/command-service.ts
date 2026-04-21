@@ -1,10 +1,19 @@
-import type { AugmentationRequest, SelectedElement } from "../types";
+import type {
+  AugmentationRequest,
+  ExtensionRuntimeMessage,
+  SelectedElement,
+} from "../types";
 import { requestStore } from "../storage/request-store";
 import { settingsStore } from "../storage/settings-store";
 import { logger } from "../utils/logger";
-import { inspectSelectedDomTree } from "./dom-inspection-service";
+import {
+  inspectSelectedDomTree,
+  resolveSelectedElement,
+  screenshotElement,
+  withElementHidden,
+} from "./dom-inspection-service";
 import { DOMExtractorSpec, ExtractedValue } from "./dom-extractor";
-import type { UISpec } from "../ai/providers/ai-provider";
+import { RenderSystemId } from "./renderer";
 
 interface SubmitAugmentationRequestOptions {
   selectedElement?: SelectedElement | null;
@@ -51,13 +60,15 @@ export async function submitAugmentationRequest(
 interface CreateUiSpecOptions {
   selectedElement?: SelectedElement | null;
   data: Record<string, ExtractedValue>;
+  strategy: RenderSystemId;
 }
 
 export async function createUiSpec(
   prompt: string,
   source: AugmentationRequest["source"],
+  screenshot: string,
   options: CreateUiSpecOptions,
-): Promise<UISpec | null> {
+): Promise<string | null> {
   const snapshot = inspectSelectedDomTree(options.selectedElement ?? null);
 
   if (!snapshot) {
@@ -74,8 +85,10 @@ export async function createUiSpec(
       source,
       snapshot,
       data: options.data,
+      screenshot,
+      strategy: options.strategy,
     },
-  });
+  } satisfies ExtensionRuntimeMessage);
 
   if (!res || !res?.data) {
     logger.error("Failed to return UI spec.");

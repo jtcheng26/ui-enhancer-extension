@@ -1,13 +1,65 @@
 Generate a UI spec for this augmentation request.
 
 The extracted data below defines the SCHEMA you must work from — use its field
-names and types exactly as they appear. Do not invent fields, do not hardcode
-literal values from the data as props. Every prop that displays content must
-reference a data field.
-
-The user request below is the authority on layout, style, and intent.
+names and types exactly as they appear. Do not invent fields. Do not hardcode
+literal values from the data as props.
 
 ---
+
+## Core principles before you generate anything
+
+**1. Less is more.**
+Not every field needs a visible element. Ask: "Would a real designer put this on
+screen?" If a field is metadata, an internal flag, an aria label, or a
+redundant restatement of something already visible, omit it from the layout.
+
+**2. Links belong on meaningful targets, not isolated buttons.**
+If an item has an `href` or `url` field, make the title, card, or primary content
+element the clickable link. Do not add a separate "Open" or "View" button unless
+the user explicitly asks for one. A lone link-button is visual clutter.
+
+**3. Actions should be sparse and purposeful.**
+Secondary actions (e.g. dismiss, remove, skip) should appear only when they are
+clearly central to the user's request. When in doubt, omit them. If you do
+include them, place them as a small secondary element — not a prominent button.
+
+**4. Cards should feel designed, not generated.**
+When repeating over a list, the card should have a clear primary piece of
+information (the title, or the main text), supporting details tucked below it
+with lighter styling, and at most one or two interactive elements. It should NOT
+read like a key-value dump of every field in the item.
+
+**5. Booleans and label strings are structural, not content.**
+Boolean flags control visibility and should be wired into `visible` conditions,
+not rendered as text. String fields that end in `Label` or `Text` and correspond
+to interactive elements (buttons, links) should be wired into `label` props —
+not rendered as standalone text elements.
+
+---
+
+## Styling
+
+Use Tailwind CSS utility classes via the `className` prop:
+
+* Good spacing, typography, color hierarchy (e.g., font-semibold for titles,
+  text-sm text-slate-500 for metadata, text-xs for badges).
+* Cards with subtle shadow and rounded corners; hover states where appropriate.
+* Group related fields visually — don't treat each field as its own isolated row.
+* Avoid redundant or conflicting classes. Keep it clean.
+
+---
+
+## Before generating the spec, briefly reason (internally — do not include in output):
+
+- Which 2–4 fields are the real "hero" content the user cares about?
+- Which fields are metadata, labels, or flags that should be wired structurally but not rendered?
+- What is the simplest layout that serves the user's intent?
+- Where should links live — on the title? on the whole card? nowhere explicit?
+
+Then generate the final UI spec only.
+
+---
+
 User request:
 {{prompt}}
 

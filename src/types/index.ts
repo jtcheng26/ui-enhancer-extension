@@ -1,8 +1,8 @@
-import type { UISpec } from "@/ai/providers/ai-provider";
 import type {
   DOMExtractorSpec,
   ExtractedValue,
 } from "../services/dom-extractor";
+import { RenderSystemId } from "@/services/renderer";
 
 export interface ElementRect {
   top: number;
@@ -51,6 +51,8 @@ export interface CreateUiCommandPayload {
   prompt: string;
   source: AugmentationRequest["source"];
   snapshot: SelectedDomTreeSnapshot;
+  screenshot: string;
+  strategy: RenderSystemId;
   data: Record<string, ExtractedValue>;
 }
 
@@ -69,7 +71,8 @@ export interface PersistedAugmentation {
   pageUrl: string;
   enabled: boolean;
   extractor: DOMExtractorSpec;
-  spec: UISpec;
+  spec: string;
+  renderSystemId: RenderSystemId;
   createdAt: string;
   updatedAt: string;
 }
@@ -77,7 +80,10 @@ export interface PersistedAugmentation {
 export interface PersistedAugmentationStore {
   list(): Promise<PersistedAugmentation[]>;
   upsert(augmentation: PersistedAugmentation): Promise<PersistedAugmentation>;
-  setEnabled(id: string, enabled: boolean): Promise<PersistedAugmentation | null>;
+  setEnabled(
+    id: string,
+    enabled: boolean,
+  ): Promise<PersistedAugmentation | null>;
   remove(id: string): Promise<void>;
   clear(): Promise<void>;
 }
@@ -142,7 +148,8 @@ export type ExtensionRuntimeMessage =
       type: "augmentation/inject";
       payload: {
         extractor: DOMExtractorSpec;
-        spec: UISpec;
+        spec: string;
+        renderSystemId: RenderSystemId;
       };
     }
   | {

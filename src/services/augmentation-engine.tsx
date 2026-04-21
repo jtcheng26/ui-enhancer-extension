@@ -1,5 +1,4 @@
 import ReactDOM from "react-dom/client";
-import { UISpec } from "@/ai/providers/ai-provider";
 import type {
   InjectedAugmentation,
   PersistedAugmentation,
@@ -22,6 +21,12 @@ import {
   type ExtractedValue,
   validateAndParse,
 } from "./dom-extractor";
+import {
+  RENDER_SYSTEMS,
+  RenderSystem,
+  RenderSystemId,
+  RenderUpdater,
+} from "./renderer";
 
 function applyPlaceholderStyles(element: HTMLDivElement) {
   Object.assign(element.style, {
@@ -43,8 +48,9 @@ function applyPlaceholderStyles(element: HTMLDivElement) {
 interface MountedAugmentation {
   augmentation: InjectedAugmentation;
   extractor?: DOMExtractorSpec;
-  spec?: UISpec;
-  stateStore?: StateStore;
+  spec?: string;
+  renderSystemId: RenderSystemId;
+  renderUpdater?: RenderUpdater;
   lastScrapedData?: Record<string, ExtractedValue>;
   originalElement?: HTMLElement;
   renderedElement?: HTMLElement | null;
@@ -142,7 +148,8 @@ export class AugmentationEngine {
 
   async inject(
     extractor: DOMExtractorSpec,
-    spec: UISpec,
+    spec: string,
+    renderSystemId: RenderSystemId,
     persistedId?: string,
   ) {
     const id = persistedId ?? crypto.randomUUID();
@@ -188,9 +195,9 @@ export class AugmentationEngine {
     replacedElement.insertAdjacentElement("afterend", mountAnchor);
     replacedElement.style.display = "none";
     replacedElement.setAttribute("aria-hidden", "true");
-    const stateStore = createStateStore(data);
 
     let ui: ShadowRootContentScriptUi<{ root: ReactDOM.Root }> | undefined;
+    let renderUpdater: RenderUpdater | undefined;
 
     try {
       ui = await createShadowRootUi(this.ctx, {
@@ -201,14 +208,11 @@ export class AugmentationEngine {
 
         onMount: (uiContainer) => {
           const root = ReactDOM.createRoot(uiContainer);
-          root.render(
-            <StateProvider store={stateStore}>
-              <VisibilityProvider>
-                <ActionProvider>
-                  <Renderer spec={spec} registry={registry} />
-                </ActionProvider>
-              </VisibilityProvider>
-            </StateProvider>,
+          renderUpdater = RENDER_SYSTEMS[renderSystemId].render(
+            root,
+            data,
+            spec,
+            persistedId,
           );
 
           return { root };
@@ -248,7 +252,8 @@ export class AugmentationEngine {
       augmentation,
       extractor,
       spec,
-      stateStore,
+      renderSystemId,
+      renderUpdater,
       lastScrapedData: data,
       originalElement: replacedElement,
       renderedElement:
@@ -336,6 +341,7 @@ export class AugmentationEngine {
       enabled: true,
       extractor: augmentation.extractor,
       spec: augmentation.spec,
+      renderSystemId: augmentation.renderSystemId,
       createdAt: augmentation.augmentation.createdAt,
       updatedAt: new Date().toISOString(),
     };
@@ -361,6 +367,7 @@ export class AugmentationEngine {
       const injectedAugmentation = await this.inject(
         persistedAugmentation.extractor,
         persistedAugmentation.spec,
+        persistedAugmentation.renderSystemId,
         persistedAugmentation.id,
       );
 
@@ -412,7 +419,7 @@ export class AugmentationEngine {
 
   private refreshMountedAugmentationData() {
     for (const mountedAugmentation of this.mountedAugmentations.values()) {
-      if (!mountedAugmentation.extractor || !mountedAugmentation.stateStore) {
+      if (!mountedAugmentation.extractor) {
         continue;
       }
 
@@ -431,7 +438,7 @@ export class AugmentationEngine {
         continue;
       }
 
-      mountedAugmentation.stateStore.update(updates);
+      mountedAugmentation.renderUpdater?.update(updates);
       mountedAugmentation.lastScrapedData = data;
       logger.info("Updated augmentation renderer state after DOM re-scrape.", {
         id: mountedAugmentation.augmentation.id,

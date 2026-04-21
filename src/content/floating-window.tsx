@@ -156,7 +156,7 @@ export function FloatingWindow({
         <div className="fixed inset-0 z-[2147483645] bg-white/18 backdrop-blur-md" />
       ) : null}
       <div
-        className="fixed left-0 top-0 z-[2147483647]"
+        className="fixed left-0 top-0 z-[2147483647]" id="aui-popup"
         style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
       >
         <div

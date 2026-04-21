@@ -25,6 +25,12 @@ import type {
 import { validateAndParse } from "@/services/dom-extractor";
 import { useAugmentationEngine } from "@/content/use-augmentation-engine";
 import { logger } from "@/utils/logger";
+import {
+  resolveSelectedElement,
+  screenshotElement,
+  withElementHidden,
+} from "@/services/dom-inspection-service";
+import { RENDER_SYSTEMS, RenderSystemId } from "@/services/renderer";
 
 interface CommandPanelProps {
   surface: "popup" | "sidepanel";
@@ -38,7 +44,7 @@ interface CommandPanelProps {
   onPreviewModeChange?: (enabled: boolean) => void;
 }
 
-type AugmentationStrategy = "schema" | "rerender";
+type AugmentationStrategy = RenderSystemId;
 
 interface RequestSettings {
   strategy: AugmentationStrategy;
@@ -56,17 +62,23 @@ const STRATEGY_OPTIONS: {
   icon: string;
 }[] = [
   {
-    value: "rerender",
+    value: "json-render",
     label: "Page update",
     description: "Create a new interface directly on the current page",
     icon: "🎨",
   },
   {
-    value: "schema",
-    label: "Data-aware",
-    description: "Use available page data to shape the generated experience",
+    value: "sample",
+    label: "Sample",
+    description: "Example data, no AI calls",
     icon: "📐",
   },
+  //   {
+  //   value: "sample",
+  //   label: "Data-aware",
+  //   description: "Use available page data to shape the generated experience",
+  //   icon: "📐",
+  // },
 ];
 
 export function CommandPanel({
@@ -90,7 +102,7 @@ export function CommandPanel({
   );
   const isSubmitting = generationStep !== null;
   const [requestSettings, setRequestSettings] = useState<RequestSettings>({
-    strategy: "rerender",
+    strategy: "json-render",
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const submissionVersionRef = useRef(0);
@@ -151,14 +163,26 @@ export function CommandPanel({
       return;
     }
 
+    const popupShadowRoot = document.querySelector(
+      "ai-ui-floating-popup",
+    )?.shadowRoot;
+
+    const popup = popupShadowRoot?.getElementById("aui-popup") as HTMLElement;
+    const screenshot = await withElementHidden(popup, () =>
+      screenshotElement(
+        resolveSelectedElement(selectedElement as SelectedElement) as Element,
+      ),
+    );
+
     const submissionVersion = submissionVersionRef.current + 1;
     submissionVersionRef.current = submissionVersion;
     setGenerationStep({ phase: "extractor" });
     try {
-      // const extractor = Example as DOMExtractorSpec;
-      const extractor = await submitAugmentationRequest(prompt, surface, {
-        selectedElement,
-      });
+      const extractor = Example as DOMExtractorSpec;
+
+      // const extractor = await submitAugmentationRequest(prompt, surface, {
+      //   selectedElement,
+      // });
 
       if (submissionVersion !== submissionVersionRef.current) {
         return;
@@ -169,23 +193,25 @@ export function CommandPanel({
 
         if (parsed.data) {
           setGenerationStep({ phase: "ui", data: parsed.data });
-          const uiSpec = await createUiSpec(prompt, surface, {
-            selectedElement,
-            data: parsed.data,
-          });
+          // const uiSpecString = await createUiSpec(prompt, surface, screenshot, {
+          //   selectedElement,
+          //   data: parsed.data,
+          //   strategy: requestSettings.strategy,
+          // });
 
-          // const uiSpec = SpecExample;
+          const uiSpecString = "a";
 
           if (submissionVersion !== submissionVersionRef.current) {
             return;
           }
 
-          logger.info("Generated UI spec.", uiSpec);
+          logger.info("Generated UI spec.", uiSpecString);
 
-          if (uiSpec && augmentationEngine) {
+          if (uiSpecString && augmentationEngine) {
             const injectedAugmentation = await augmentationEngine.inject(
               extractor,
-              uiSpec,
+              uiSpecString,
+              requestSettings.strategy,
             );
 
             if (submissionVersion !== submissionVersionRef.current) {

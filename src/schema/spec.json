@@ -1,315 +1,444 @@
 {
   "elements": {
-    "actions-row": {
-      "children": ["show-all-button", "start-course-button"],
-      "props": {
-        "align": "center",
-        "direction": "horizontal",
-        "gap": "md",
-        "justify": "between"
-      },
-      "type": "Stack"
-    },
-    "dismiss-button": {
+    "action-show-all": {
       "children": [],
       "props": {
         "label": {
-          "$template": "${dismissLabel}"
+          "$state": "/showAllLabel"
         },
         "variant": "secondary"
       },
       "type": "Button"
     },
-    "feedback-heading": {
+    "action-start-course": {
       "children": [],
-      "props": {
-        "level": "h2",
-        "text": {
-          "$template": "${showAllLabel}"
+      "on": {
+        "press": {
+          "action": "setState",
+          "params": {
+            "statePath": "/createCourseModalExists",
+            "value": true
+          }
         }
       },
-      "type": "Heading"
-    },
-    "feedback-item-template": {
-      "children": [],
-      "props": {
-        "description": {
-          "$template": "${text}"
-        },
-        "maxWidth": "md",
-        "title": {
-          "$template": "${text}"
-        }
-      },
-      "repeat": {
-        "key": "text",
-        "statePath": "/recentFeedback"
-      },
-      "type": "Card"
-    },
-    "feedback-list": {
-      "children": ["feedback-item-template"],
-      "props": {
-        "direction": "vertical",
-        "gap": "sm"
-      },
-      "type": "Stack"
-    },
-    "feedback-section": {
-      "children": ["feedback-stack"],
-      "props": {
-        "description": {
-          "$template": "${startNewCourseLabel}"
-        },
-        "maxWidth": "full",
-        "title": {
-          "$template": "${viewGradesLabel}"
-        }
-      },
-      "type": "Card"
-    },
-    "feedback-stack": {
-      "children": ["feedback-heading", "feedback-list"],
-      "props": {
-        "direction": "vertical",
-        "gap": "sm"
-      },
-      "type": "Stack"
-    },
-    "header-stack": {
-      "children": ["title", "subtitle"],
-      "props": {
-        "direction": "vertical",
-        "gap": "sm"
-      },
-      "type": "Stack"
-    },
-    "main": {
-      "children": ["page-stack"],
-      "props": {
-        "description": {
-          "$template": "${startNewCourseLabel}"
-        },
-        "maxWidth": "full",
-        "title": {
-          "$template": "${showAllLabel}"
-        }
-      },
-      "type": "Card"
-    },
-    "page-stack": {
-      "children": [
-        "header-stack",
-        "todo-section",
-        "feedback-section",
-        "actions-row"
-      ],
-      "props": {
-        "direction": "vertical",
-        "gap": "lg"
-      },
-      "type": "Stack"
-    },
-    "show-all-button": {
-      "children": [],
       "props": {
         "label": {
-          "$template": "${showAllLabel}"
+          "$state": "/startNewCourseLabel"
         },
         "variant": "primary"
       },
       "type": "Button"
     },
-    "start-course-button": {
+    "action-view-grades": {
       "children": [],
       "props": {
         "label": {
-          "$template": "${startNewCourseLabel}"
+          "$state": "/viewGradesLabel"
         },
         "variant": "secondary"
       },
       "type": "Button"
     },
-    "subtitle": {
+    "feedback-card": {
+      "children": ["feedback-separator", "feedback-list-stack"],
+      "props": {
+        "className": "border-emerald-200 bg-white/90 shadow-sm",
+        "description": "Kind words from your teacher.",
+        "maxWidth": "full",
+        "title": "Proud notes"
+      },
+      "type": "Card",
+      "visible": {
+        "$state": "/hasRecentFeedback"
+      }
+    },
+    "feedback-item-badge": {
       "children": [],
       "props": {
-        "level": "h3",
-        "text": {
-          "$template": "${startNewCourseLabel}"
-        }
+        "text": "Teacher cheer",
+        "variant": "outline"
       },
-      "type": "Heading"
+      "type": "Badge"
     },
-    "title": {
-      "children": [],
+    "feedback-item-card": {
+      "children": ["feedback-item-stack"],
       "props": {
-        "level": "h1",
-        "text": {
-          "$template": "${viewGradesLabel}"
-        }
+        "className": "border-emerald-100 bg-emerald-50/70 shadow-sm",
+        "maxWidth": "full"
       },
-      "type": "Heading"
+      "type": "Card"
     },
-    "todo-item-actions": {
-      "children": ["todo-points", "dismiss-button"],
-      "props": {
-        "align": "center",
-        "direction": "horizontal",
-        "gap": "sm"
-      },
-      "type": "Stack"
-    },
-    "todo-item-left": {
-      "children": ["todo-item-title", "todo-item-meta"],
+    "feedback-item-stack": {
+      "children": ["feedback-item-badge", "feedback-item-text"],
       "props": {
         "direction": "vertical",
         "gap": "sm"
       },
       "type": "Stack"
     },
-    "todo-item-meta": {
+    "feedback-item-text": {
       "children": [],
       "props": {
-        "level": "h4",
         "text": {
-          "$template": "${courseName} · ${dueText}"
-        }
+          "$item": "text"
+        },
+        "variant": "body"
       },
-      "type": "Heading"
+      "type": "Text"
     },
-    "todo-item-row": {
-      "children": ["todo-item-left", "todo-item-actions"],
+    "feedback-list-stack": {
+      "children": ["feedback-item-card"],
       "props": {
-        "align": "center",
-        "direction": "horizontal",
-        "gap": "md",
-        "justify": "between"
+        "direction": "vertical",
+        "gap": "md"
+      },
+      "repeat": {
+        "key": "text",
+        "statePath": "/recentFeedback"
       },
       "type": "Stack"
     },
-    "todo-item-template": {
-      "children": ["todo-item-row"],
+    "feedback-separator": {
+      "children": [],
       "props": {
-        "description": {
-          "$template": "${courseName} • ${pointsText} • ${dueText}"
-        },
-        "maxWidth": "full",
-        "title": {
-          "$template": "${title}"
-        }
+        "orientation": "horizontal"
       },
-      "repeat": {
-        "key": "title",
-        "statePath": "/toDo"
+      "type": "Separator"
+    },
+    "hero-alert": {
+      "children": [],
+      "props": {
+        "message": "Choose one card and start there.",
+        "title": "Tiny steps win!",
+        "type": "info"
+      },
+      "type": "Alert"
+    },
+    "hero-badge": {
+      "children": [],
+      "props": {
+        "text": "Star time",
+        "variant": "outline"
+      },
+      "type": "Badge"
+    },
+    "hero-card": {
+      "children": ["hero-stack"],
+      "props": {
+        "className": "border-sky-200 bg-white/90 shadow-sm",
+        "maxWidth": "full"
       },
       "type": "Card"
     },
-    "todo-item-title": {
+    "hero-heading": {
       "children": [],
       "props": {
-        "level": "h3",
-        "text": {
-          "$template": "${title}"
-        }
+        "level": "h1",
+        "text": "Homework Quest"
       },
       "type": "Heading"
     },
-    "todo-list": {
-      "children": ["todo-item-template"],
+    "hero-stack": {
+      "children": ["hero-badge", "hero-heading", "hero-subtitle", "hero-alert"],
       "props": {
+        "align": "start",
+        "direction": "vertical",
+        "gap": "sm"
+      },
+      "type": "Stack"
+    },
+    "hero-subtitle": {
+      "children": [],
+      "props": {
+        "text": "Pick one tiny task, earn shiny stars, and feel proud.",
+        "variant": "lead"
+      },
+      "type": "Text"
+    },
+    "page": {
+      "children": [
+        "hero-card",
+        "quick-actions-card",
+        "start-course-dialog",
+        "quest-board-card",
+        "feedback-card"
+      ],
+      "props": {
+        "className": "mx-auto min-h-screen w-full max-w-4xl bg-gradient-to-br from-sky-50 via-white to-amber-50 p-4 md:p-8",
+        "direction": "vertical",
+        "gap": "xl"
+      },
+      "type": "Stack"
+    },
+    "quest-board-card": {
+      "children": ["quest-board-separator", "todo-list-stack"],
+      "props": {
+        "className": "border-indigo-200 bg-white/90 shadow-sm",
+        "description": "A playful check-off list for today.",
+        "maxWidth": "full",
+        "title": "Your quest board"
+      },
+      "type": "Card",
+      "visible": {
+        "$state": "/hasToDo"
+      }
+    },
+    "quest-board-separator": {
+      "children": [],
+      "props": {
+        "orientation": "horizontal"
+      },
+      "type": "Separator"
+    },
+    "quick-actions-card": {
+      "children": ["quick-actions-stack"],
+      "props": {
+        "className": "border-amber-200 bg-white/90 shadow-sm",
+        "description": "Tap to switch gears or start something fresh.",
+        "maxWidth": "full",
+        "title": "Quick actions"
+      },
+      "type": "Card"
+    },
+    "quick-actions-stack": {
+      "children": [
+        "action-start-course",
+        "action-view-grades",
+        "action-show-all"
+      ],
+      "props": {
+        "className": "flex-wrap",
+        "direction": "horizontal",
+        "gap": "sm"
+      },
+      "type": "Stack"
+    },
+    "start-course-dialog": {
+      "children": ["start-course-dialog-stack"],
+      "props": {
+        "description": "Choose a fresh learning quest.",
+        "openPath": "/createCourseModalExists",
+        "title": "Start a new adventure"
+      },
+      "type": "Dialog"
+    },
+    "start-course-dialog-badge": {
+      "children": [],
+      "props": {
+        "text": "New quest unlocked",
+        "variant": "default"
+      },
+      "type": "Badge"
+    },
+    "start-course-dialog-close": {
+      "children": [],
+      "on": {
+        "press": {
+          "action": "setState",
+          "params": {
+            "statePath": "/createCourseModalExists",
+            "value": false
+          }
+        }
+      },
+      "props": {
+        "label": "Maybe later",
+        "variant": "secondary"
+      },
+      "type": "Button"
+    },
+    "start-course-dialog-stack": {
+      "children": [
+        "start-course-dialog-text",
+        "start-course-dialog-badge",
+        "start-course-dialog-close"
+      ],
+      "props": {
+        "align": "start",
         "direction": "vertical",
         "gap": "md"
       },
       "type": "Stack"
     },
-    "todo-points": {
+    "start-course-dialog-text": {
       "children": [],
       "props": {
-        "level": "h4",
-        "text": {
-          "$template": "${pointsText}"
-        }
+        "text": "Ready for a brand-new quest? Pick a subject you like and begin with one tiny step.",
+        "variant": "lead"
       },
-      "type": "Heading"
+      "type": "Text"
     },
-    "todo-section": {
-      "children": ["todo-list"],
+    "todo-item-card": {
+      "children": ["todo-item-stack"],
       "props": {
-        "description": {
-          "$template": "${viewGradesLabel}"
-        },
-        "maxWidth": "full",
-        "title": {
-          "$template": "${showAllLabel}"
-        }
+        "className": "border-sky-100 bg-white shadow-sm transition hover:shadow-md",
+        "maxWidth": "full"
       },
       "type": "Card"
+    },
+    "todo-item-course-badge": {
+      "children": [],
+      "props": {
+        "text": {
+          "$item": "courseName"
+        },
+        "variant": "outline"
+      },
+      "type": "Badge"
+    },
+    "todo-item-dismiss": {
+      "children": [],
+      "on": {
+        "press": {
+          "action": "removeState",
+          "params": {
+            "index": {
+              "$index": true
+            },
+            "statePath": "/toDo"
+          }
+        }
+      },
+      "props": {
+        "label": {
+          "$item": "dismissLabel"
+        },
+        "variant": "secondary"
+      },
+      "type": "Button"
+    },
+    "todo-item-due-text": {
+      "children": [],
+      "props": {
+        "text": {
+          "$item": "dueText"
+        },
+        "variant": "caption"
+      },
+      "type": "Text"
+    },
+    "todo-item-header": {
+      "children": ["todo-item-main", "todo-item-points-badge"],
+      "props": {
+        "align": "start",
+        "className": "items-start",
+        "direction": "horizontal",
+        "gap": "sm",
+        "justify": "between"
+      },
+      "type": "Stack"
+    },
+    "todo-item-link": {
+      "children": [],
+      "props": {
+        "href": {
+          "$item": "href"
+        },
+        "label": {
+          "$item": "title"
+        }
+      },
+      "type": "Link"
+    },
+    "todo-item-main": {
+      "children": ["todo-item-link", "todo-item-meta"],
+      "props": {
+        "className": "min-w-0",
+        "direction": "vertical",
+        "gap": "xs"
+      },
+      "type": "Stack"
+    },
+    "todo-item-meta": {
+      "children": ["todo-item-course-badge", "todo-item-due-text"],
+      "props": {
+        "className": "flex-wrap",
+        "direction": "horizontal",
+        "gap": "sm"
+      },
+      "type": "Stack"
+    },
+    "todo-item-points-badge": {
+      "children": [],
+      "props": {
+        "text": {
+          "$item": "pointsText"
+        },
+        "variant": "secondary"
+      },
+      "type": "Badge"
+    },
+    "todo-item-stack": {
+      "children": ["todo-item-header", "todo-item-dismiss"],
+      "props": {
+        "direction": "vertical",
+        "gap": "sm"
+      },
+      "type": "Stack"
+    },
+    "todo-list-stack": {
+      "children": ["todo-item-card"],
+      "props": {
+        "direction": "vertical",
+        "gap": "md"
+      },
+      "repeat": {
+        "key": "href",
+        "statePath": "/toDo"
+      },
+      "type": "Stack"
     }
   },
-  "root": "main",
+  "root": "page",
   "state": {
-    "createCourseModalExists": true,
+    "createCourseModalExists": false,
     "hasRecentFeedback": true,
     "hasToDo": true,
     "recentFeedback": [
       {
-        "text": "Nothing for now"
+        "text": "You tried every problem like a brave explorer!"
+      },
+      {
+        "text": "Your reading voice was bright and clear."
+      },
+      {
+        "text": "Amazing job staying focused during science time!"
       }
     ],
-    "showAllLabel": "Show All",
-    "startNewCourseLabel": "Start a New Course",
+    "showAllLabel": "Show all quests",
+    "startNewCourseLabel": "Start a new adventure",
     "toDo": [
       {
-        "courseName": "Biology",
-        "dismissButtonType": "button",
-        "dismissLabel": "Dismiss Educ BIO Assignment 6",
-        "dueText": "Apr 10 at 11:59pm",
-        "href": "/courses/14192559/assignments/63770625",
-        "pointsText": "100 points",
-        "title": "Educ BIO Assignment 6",
-        "titleAriaLabel": "Assignment, Educ BIO Assignment 6"
+        "courseName": "Math Magic",
+        "dismissButtonType": "secondary",
+        "dismissLabel": "Hide for now",
+        "dueText": "Due today",
+        "href": "https://school.example.com/quests/math-magic",
+        "pointsText": "⭐ 10 stars",
+        "title": "Count the jellybeans in 3 treasure jars",
+        "titleAriaLabel": "Open the Math Magic counting quest"
       },
       {
-        "courseName": "Calculus II",
-        "dismissButtonType": "button",
-        "dismissLabel": "Dismiss Educ CALC Assignment 6",
-        "dueText": "Apr 10 at 11:59pm",
-        "href": "/courses/14050255/assignments/63770717",
-        "pointsText": "100 points",
-        "title": "Educ CALC Assignment 6",
-        "titleAriaLabel": "Assignment, Educ CALC Assignment 6"
+        "courseName": "Reading Rockets",
+        "dismissButtonType": "secondary",
+        "dismissLabel": "Snooze",
+        "dueText": "Due tomorrow",
+        "href": "https://school.example.com/quests/reading-rockets",
+        "pointsText": "⭐ 8 stars",
+        "title": "Read one story and draw your favorite character",
+        "titleAriaLabel": "Open the Reading Rockets story quest"
       },
       {
-        "courseName": "Computer",
-        "dismissButtonType": "button",
-        "dismissLabel": "Dismiss Educ COMP Assignment 6",
-        "dueText": "Apr 10 at 11:59pm",
-        "href": "/courses/13992955/assignments/63764047",
-        "pointsText": "100 points",
-        "title": "Educ COMP Assignment 6",
-        "titleAriaLabel": "Assignment, Educ COMP Assignment 6"
-      },
-      {
-        "courseName": "English Test",
-        "dismissButtonType": "button",
-        "dismissLabel": "Dismiss Educ ENG Assignment 6",
-        "dueText": "Apr 10 at 11:59pm",
-        "href": "/courses/12452872/assignments/63770757",
-        "pointsText": "100 points",
-        "title": "Educ ENG Assignment 6",
-        "titleAriaLabel": "Assignment, Educ ENG Assignment 6"
-      },
-      {
-        "courseName": "History",
-        "dismissButtonType": "button",
-        "dismissLabel": "Dismiss Educ HIST Assignment 6",
-        "dueText": "Apr 10 at 11:59pm",
-        "href": "/courses/14190013/assignments/63770805",
-        "pointsText": "100 points",
-        "title": "Educ HIST Assignment 6",
-        "titleAriaLabel": "Assignment, Educ HIST Assignment 6"
+        "courseName": "Science Safari",
+        "dismissButtonType": "secondary",
+        "dismissLabel": "Later",
+        "dueText": "Due Friday",
+        "href": "https://school.example.com/quests/science-safari",
+        "pointsText": "⭐ 12 stars",
+        "title": "Build a paper airplane and test its wings",
+        "titleAriaLabel": "Open the Science Safari build quest"
       }
     ],
-    "viewGradesLabel": "View Grades"
+    "viewGradesLabel": "View grades"
   }
 }
