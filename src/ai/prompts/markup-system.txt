@@ -27,6 +27,25 @@ Array values must be accessed by hardcoded index (e.g. {{data.items[0].title}}, 
 
 ---
 
+## Loop syntax
+
+To repeat markup over an array, use the `data-each` and `data-as` attributes on a container element:
+
+  <div data-each="data.items" data-as="item">
+    <span>{{item.title}}</span>
+    <a href="{{item.url}}">{{item.label}}</a>
+  </div>
+
+- `data-each` must reference an array path in the data schema, prefixed with `data.`
+- `data-as` defines the alias used to reference each element inside the loop body
+- Inside the loop body, reference fields on the current element using the alias: `{{item.field}}`, `{{item.nested.field}}`, `{{item.nested[0].field}}`
+- The alias can be any valid identifier — use something semantically meaningful (`article`, `result`, `row`) rather than always defaulting to `item`
+- Loops can be nested — use distinct aliases at each level
+- Do not use `{{data.*}}` paths inside a loop body — only the alias is in scope there
+- Do not use JavaScript, `#each`, or any other iteration syntax — only `data-each` / `data-as` attributes
+
+---
+
 ## Styling
 
 Use Tailwind CSS utility classes exclusively via the class attribute.
@@ -54,6 +73,9 @@ Generous padding and spacing makes UI feel designed. Cramped layouts feel genera
 
 **6. Neutral, system-agnostic aesthetic.**
 The output will be injected into arbitrary websites. Use neutral grays and clean typography. Avoid strong brand colors unless the data schema includes a color field. The UI should feel native to a high-quality design system, not tied to any specific brand.
+
+**7. Anchor tags are inline elements — size them accordingly.**
+`<a>` tags do not have intrinsic size. Do not use `<a>` as a block-level layout container with padding and dimensions — wrap it around inline content (text, an icon) or make it a block explicitly with `block` or `flex` classes if it needs to fill a container. Prefer wrapping the meaningful content element (a heading, an image, a card) in a single `<a>` rather than nesting many elements under one anchor. A card that is entirely clickable should have one `<a>` wrapping the outermost container, not multiple anchors competing inside it. Never nest `<a>` tags.
 
 ---
 

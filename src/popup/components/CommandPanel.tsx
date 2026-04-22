@@ -8,8 +8,8 @@ import {
   createUiSpec,
   submitAugmentationRequest,
 } from "../../services/command-service";
-// import Example from "../../schema/dom-extraction-example.json";
-import Example from "../../schema/example.json";
+import Example from "../../schema/dom-extraction-example.json";
+// import Example from "../../schema/example.json";
 import SpecExample from "../../schema/spec.json";
 import type {
   AugmentationRequest,
@@ -30,7 +30,7 @@ import {
   screenshotElement,
   withElementHidden,
 } from "@/services/dom-inspection-service";
-import { RENDER_SYSTEMS, RenderSystemId } from "@/services/renderer";
+import { RENDER_SYSTEMS, RenderSystemId } from "@/services/renderer/renderer";
 
 interface CommandPanelProps {
   surface: "popup" | "sidepanel";

@@ -26,7 +26,7 @@ import {
   RenderSystem,
   RenderSystemId,
   RenderUpdater,
-} from "./renderer";
+} from "./renderer/renderer";
 
 function applyPlaceholderStyles(element: HTMLDivElement) {
   Object.assign(element.style, {

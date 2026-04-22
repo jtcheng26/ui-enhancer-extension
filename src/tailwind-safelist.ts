@@ -44,6 +44,10 @@ min-h-0 min-h-full min-h-screen
 max-w-none max-w-xs max-w-sm max-w-md max-w-lg max-w-xl max-w-2xl max-w-3xl max-w-4xl max-w-5xl max-w-6xl max-w-full max-w-fit
 max-h-24 max-h-32 max-h-40 max-h-48 max-h-56 max-h-64 max-h-80 max-h-96 max-h-full max-h-screen
 
+w-0.5 w-1.5 w-2.5 w-3.5
+h-0.5 h-1.5 h-2.5 h-3.5
+size-0.5 size-1.5 size-2.5 size-3.5
+
 /* Typography */
 text-xs text-sm text-base text-lg text-xl text-2xl text-3xl text-4xl text-5xl
 font-thin font-extralight font-light font-normal font-medium font-semibold font-bold font-extrabold font-black

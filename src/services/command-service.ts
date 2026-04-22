@@ -13,7 +13,7 @@ import {
   withElementHidden,
 } from "./dom-inspection-service";
 import { DOMExtractorSpec, ExtractedValue } from "./dom-extractor";
-import { RenderSystemId } from "./renderer";
+import { RenderSystemId } from "./renderer/renderer";
 
 interface SubmitAugmentationRequestOptions {
   selectedElement?: SelectedElement | null;

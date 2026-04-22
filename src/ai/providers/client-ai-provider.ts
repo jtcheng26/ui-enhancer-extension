@@ -15,6 +15,7 @@ import uiPromptUser from "../prompts/generate-ui-user.txt?raw";
 import markupPromptSystem from "../prompts/markup-system.txt?raw";
 import markupPromptUser from "../prompts/markup-user.txt?raw";
 import { jsonRenderSystemPrompt } from "../ui/prompt";
+import ExampleMarkup from "@/schema/markup.txt?raw";
 
 // import Raw from "../prompts/temp.txt?raw";
 import { compileSpecStream } from "@json-render/core";
@@ -147,6 +148,7 @@ export class ClientAIProvider implements AIProvider {
       ],
     });
     return result.text;
+    // return ExampleMarkup;
   }
 
   async generateUI(input: UIRequest): Promise<string> {

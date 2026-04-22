@@ -2,7 +2,7 @@ import type {
   DOMExtractorSpec,
   ExtractedValue,
 } from "../services/dom-extractor";
-import { RenderSystemId } from "@/services/renderer";
+import { RenderSystemId } from "@/services/renderer/renderer";
 
 export interface ElementRect {
   top: number;
