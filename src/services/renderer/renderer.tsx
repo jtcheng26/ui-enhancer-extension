@@ -21,6 +21,7 @@ export interface RenderSystem {
     root: ReactDOM.Root,
     data: Record<string, ExtractedValue>,
     spec: string,
+    uiContainer: HTMLElement,
     persistedId?: string,
   ) => RenderUpdater;
 }
@@ -54,7 +55,7 @@ export type RenderSystemId = "json-render" | "sample" | "markup";
 
 export const RENDER_SYSTEMS: Record<RenderSystemId, RenderSystem> = {
   "json-render": {
-    render: (root, data, spec, persistedId) =>
+    render: (root, data, spec, uiContainer, persistedId) =>
       jsonRenderer(
         root,
         data,
@@ -63,7 +64,7 @@ export const RENDER_SYSTEMS: Record<RenderSystemId, RenderSystem> = {
       ),
   },
   sample: {
-    render: (root, data, spec, persistedId) =>
+    render: (root, data, spec, uiContainer, persistedId) =>
       jsonRenderer(root, data, SpecExample, persistedId),
   },
   markup: MarkupRenderer,

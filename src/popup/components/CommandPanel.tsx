@@ -8,7 +8,8 @@ import {
   createUiSpec,
   submitAugmentationRequest,
 } from "../../services/command-service";
-import Example from "../../schema/dom-extraction-example.json";
+// import Example from "../../schema/dom-extraction-example.json";
+import Example from "@/schema/action.json";
 // import Example from "../../schema/example.json";
 import SpecExample from "../../schema/spec.json";
 import type {
@@ -190,6 +191,8 @@ export function CommandPanel({
 
       if (extractor) {
         const parsed = validateAndParse(extractor);
+
+        console.log("Parsed data.", parsed);
 
         if (parsed.data) {
           setGenerationStep({ phase: "ui", data: parsed.data });

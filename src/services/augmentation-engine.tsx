@@ -212,6 +212,7 @@ export class AugmentationEngine {
             root,
             data,
             spec,
+            uiContainer,
             persistedId,
           );
 

@@ -29,6 +29,7 @@ type Shape =
   | "number"
   | "boolean"
   | "null"
+  | "clickAction"
   | { type: "array"; items: Shape }
   | { type: "object"; properties: Record<string, Shape> };
 
@@ -54,6 +55,7 @@ function getShape(value: ExtractedValue): Shape {
     case "boolean":
       return "boolean";
     case "object":
+      if (value.type === "clickAction") return "clickAction";
       return {
         type: "object",
         properties: Object.fromEntries(

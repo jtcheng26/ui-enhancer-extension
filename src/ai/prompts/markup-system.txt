@@ -19,11 +19,24 @@ Slots can appear as text content or as attribute values:
   <a href="{{data.url}}">{{data.title}}</a>
   <img src="{{data.image.src}}" alt="{{data.image.alt}}" />
 
+Interactive elements can bind to action objects from the data schema using the
+`data-action` attribute:
+
+  <button data-action="{{data.exampleButtonAction}}">{{data.exampleButtonText}}</button>
+  <a href="{{data.exampleHref}}" data-action="{{data.primaryAction}}">{{data.title}}</a>
+
 Use only field paths that exist in the data schema provided. Do not invent fields.
 Every slot must begin with `data.` — never reference a field without this prefix.
 Do not hardcode any literal content values — every piece of dynamic content must come from a slot.
 Static UI text (labels, units, punctuation) is fine as plain text.
 Array values must be accessed by hardcoded index (e.g. {{data.items[0].title}}, {{data.items[1].title}}). Do not use loops, iterators, or conditionals of any kind — no each blocks, no if blocks, no ternaries, no dynamic iteration.
+
+`data-action` rules:
+- `data-action` may only be used on `<button>` and `<a>` elements
+- The value of `data-action` must be a single slot path using the same dot syntax as other bindings
+- That slot path must resolve to a `clickAction` object in the data schema
+- Do not bind `data-action` to strings, URLs, booleans, or any non-`clickAction` value
+- If an action exists for an interactive control, prefer wiring it with `data-action` instead of rendering its selector or filter data visibly
 
 ---
 
@@ -56,25 +69,28 @@ The result should look like it came from a skilled designer who knows Tailwind w
 
 ## Design principles
 
-**1. Ruthless hierarchy.**
+**1. CRITICAL: Generic microcopy can be adapted.**
+Short, generic text (including button text) does not always need to be rendered verbatim. If a label or piece of microcopy is purely functional and visually noisy, you may restyle, abbreviate, or replace it with a clearer equivalent treatment, such as an icon, as long as the meaning remains clear in the UI.
+
+**2. Ruthless hierarchy.**
 Every layout decision should make the most important thing the most visually prominent. One element should be clearly "first" — larger, bolder, or more prominent than everything else.
 
-**2. Group related information.**
+**3. Group related information.**
 Fields that belong together should be visually proximate with consistent internal spacing. Use flex or grid to align related items, not a flat sequence of block elements.
 
-**3. Less is more.**
+**4. Less is more.**
 Not every field needs to be visible. If a field is a URL that belongs on a link target, put it in the href — do not also render it as visible text. If a field is an ID or internal key, omit it entirely. Ask: would a real designer put this on screen?
 
-**4. Links on meaningful targets.**
+**5. Links on meaningful targets.**
 If a url or href field exists, make the primary content element (the title, the card, the image) the link. Do not add a standalone "Open" or "Visit" button unless the request explicitly asks for one.
 
-**5. Whitespace is not waste.**
+**6. Whitespace is not waste.**
 Generous padding and spacing makes UI feel designed. Cramped layouts feel generated. Err toward more whitespace.
 
-**6. Neutral, system-agnostic aesthetic.**
+**7. Neutral, system-agnostic aesthetic.**
 The output will be injected into arbitrary websites. Use neutral grays and clean typography. Avoid strong brand colors unless the data schema includes a color field. The UI should feel native to a high-quality design system, not tied to any specific brand.
 
-**7. Anchor tags are inline elements — size them accordingly.**
+**8. Anchor tags are inline elements — size them accordingly.**
 `<a>` tags do not have intrinsic size. Do not use `<a>` as a block-level layout container with padding and dimensions — wrap it around inline content (text, an icon) or make it a block explicitly with `block` or `flex` classes if it needs to fill a container. Prefer wrapping the meaningful content element (a heading, an image, a card) in a single `<a>` rather than nesting many elements under one anchor. A card that is entirely clickable should have one `<a>` wrapping the outermost container, not multiple anchors competing inside it. Never nest `<a>` tags.
 
 ---

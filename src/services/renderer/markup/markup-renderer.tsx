@@ -3,6 +3,7 @@ import { RenderSystem } from "../renderer";
 import ReactDOM from "react-dom/client";
 import { resolveData } from "./passes/slots";
 import { expandEach } from "./passes/loops";
+import { applyActions } from "./passes/actions";
 
 export type Preprocessor = (
   data: Record<string, unknown>,
@@ -14,8 +15,8 @@ export type Visitor = (
   data: Record<string, unknown>,
 ) => Document;
 
-const PREPROCESSORS: Preprocessor[] = [resolveData];
-const VISITORS: Visitor[] = [expandEach];
+const PREPROCESSORS: Preprocessor[] = [];
+const VISITORS: Visitor[] = [expandEach, applyActions, resolveData];
 
 export const preprocessMarkup: Preprocessor = (data, spec) => {
   const processed = PREPROCESSORS.reduce(
@@ -37,6 +38,7 @@ export function renderMarkupString(
   root: ReactDOM.Root,
   data: Record<string, ExtractedValue>,
   spec: string,
+  uiContainer: HTMLElement,
   persistedId?: string,
 ): { update: (data: Record<string, unknown>) => void } {
   function render(data: Record<string, unknown>) {
@@ -47,8 +49,12 @@ export function renderMarkupString(
       "text/html",
     );
     const transformedDOMTree = transformDOMTree(DOMTree, globalData);
-    const finalHtml = transformedDOMTree.body.innerHTML;
-    root.render(<div dangerouslySetInnerHTML={{ __html: finalHtml }} />);
+    // const finalHtml = transformedDOMTree.body.innerHTML;
+    // root.render(<div id="#aui-root" />);
+    uiContainer.replaceChildren(transformedDOMTree.body);
+    // const existing = document.getElementById("#aui_root");
+    // if (!existing) uiContainer.appendChild(transformedDOMTree.body);
+    // else existing.replaceWith(transformedDOMTree.body);
   }
 
   render(data);

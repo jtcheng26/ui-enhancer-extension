@@ -1,5 +1,40 @@
 import { Visitor } from "../markup-renderer";
-import { resolvePath } from "./shared";
+import { fillDataSlots, resolvePath } from "./shared";
+
+function expandAliasSlots(el: Element, alias: string, prefix: string) {
+  const slotPattern = new RegExp(
+    `\\{\\{${alias}(\\.[\\.\\w\\[\\]]+)?\\}\\}`,
+    "g",
+  );
+
+  const replaceSlots = (input: string) =>
+    input.replace(slotPattern, (s) => {
+      return prefix + s.slice(s.search(slotPattern) + alias.length + 2);
+    });
+
+  const walker = el.ownerDocument!.createTreeWalker(
+    el,
+    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+  );
+
+  if (el.attributes) {
+    for (const attr of el.attributes) {
+      attr.value = replaceSlots(attr.value);
+    }
+  }
+
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      node.textContent = replaceSlots(node.textContent ?? "");
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const elem = node as Element;
+      for (const attr of elem.attributes) {
+        attr.value = replaceSlots(attr.value);
+      }
+    }
+  }
+}
 
 export const expandEach: Visitor = (root, data) => {
   // process deepest first so nested loops expand inside-out
@@ -22,9 +57,9 @@ export const expandEach: Visitor = (root, data) => {
 
     const fragment = root.createDocumentFragment();
 
-    for (const item of items) {
+    for (let i = 0; i < items.length; i++) {
       const clone = el.cloneNode(true) as HTMLElement;
-      fillAliasSlots(clone, alias, item);
+      expandAliasSlots(clone, alias, `{{${arrayPath}[${i}]`);
       fragment.appendChild(clone);
     }
 
@@ -33,36 +68,3 @@ export const expandEach: Visitor = (root, data) => {
 
   return root;
 };
-
-function fillAliasSlots(el: Element, alias: string, item: unknown) {
-  const slotPattern = new RegExp(
-    `\\{\\{${alias}(\\.[\\.\\w\\[\\]]+)?\\}\\}`,
-    "g",
-  );
-
-  const walker = el.ownerDocument!.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let node: Text | null;
-  while ((node = walker.nextNode() as Text | null)) {
-    node.textContent = node.textContent!.replace(slotPattern, (_, tail) => {
-      const value = tail ? resolvePath(item, tail.slice(1)) : item;
-      return value != null ? String(value) : "";
-    });
-  }
-
-  for (const child of el.querySelectorAll("*")) {
-    for (const attr of child.attributes) {
-      attr.value = attr.value.replace(slotPattern, (_, tail) => {
-        const value = tail ? resolvePath(item, tail.slice(1)) : item;
-        return value != null ? String(value) : "";
-      });
-    }
-  }
-
-  // also handle attributes on el itself
-  for (const attr of el.attributes) {
-    attr.value = attr.value.replace(slotPattern, (_, tail) => {
-      const value = tail ? resolvePath(item, tail.slice(1)) : item;
-      return value != null ? String(value) : "";
-    });
-  }
-}

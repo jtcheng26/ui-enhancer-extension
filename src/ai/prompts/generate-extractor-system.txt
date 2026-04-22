@@ -50,7 +50,7 @@ Every `list.item` must reference a key in `extractors`.
 FIELD SPECS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Each field must be exactly one of these three shapes:
+Each field must be exactly one of these four shapes:
 
 1. `value`
    Use for strings, booleans, numbers encoded as text, nullable values, regex
@@ -91,6 +91,17 @@ Each field must be exactly one of these three shapes:
      "from": "<earlierSiblingFieldName>",
      "fn": "arrayNotEmpty" | "arrayLength" | "isNull" |
            "not" | "toString" | "toNumber"
+   }
+
+4. `clickAction`
+   Use when the output must identify a specific clickable element. Prefer a
+   unique selector when possible. If text content is needed to disambiguate,
+   add `filter`, especially `textMatches`.
+
+   {
+     "kind": "clickAction",
+     "selector": "<CSS selector for the clickable element>",
+     "filter": <Filter>
    }
 
 
@@ -162,7 +173,8 @@ Transforms are only valid on `text` and `attr` sources:
 FILTERS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Filters are valid in `exists.filter`, `list.filter`, and `list.exclude`.
+Filters are valid in `exists.filter`, `list.filter`, `list.exclude`, and
+`clickAction.filter`.
 
   {
     "textMatches": "<regex>",
@@ -195,6 +207,8 @@ MODELING
   - Use `kind: "list"` for repeated structures. Never manually enumerate items.
   - Use `kind: "derive"` for summary booleans or counts computed from existing
     fields.
+  - Use `kind: "clickAction"` when you need to return a clickable element as a
+    special action field in the output data.
   - If a field may be absent, set `nullable: true` on the `value` field.
   - If you need to remove sentinel rows like "Nothing for now", prefer
     `list.exclude` over fragile selector hacks.

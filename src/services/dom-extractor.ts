@@ -100,6 +100,11 @@ export const ExtractorFieldSchema = z.discriminatedUnion("kind", [
     from: z.string().min(1),
     fn: DeriveFnSchema,
   }),
+  z.object({
+    kind: z.literal("clickAction"),
+    selector: z.string().min(1),
+    filter: FilterSchema.optional(),
+  }),
 ]);
 
 export const RootSpecSchema = z.object({
@@ -122,11 +127,18 @@ export type RootSpec = z.infer<typeof RootSpecSchema>;
 export type DOMExtractorSpec = z.infer<typeof DOMExtractorSpecSchema>;
 export type ExtractorMap = DOMExtractorSpec["extractors"][string];
 
+export interface ClickActionValue {
+  type: "clickAction";
+  selector: string;
+  filter?: Filter;
+}
+
 export type ExtractedValue =
   | string
   | boolean
   | number
   | null
+  | ClickActionValue
   | ExtractedValue[]
   | { [key: string]: ExtractedValue };
 
@@ -274,6 +286,12 @@ function semanticValidate(spec: DOMExtractorSpec, errors: string[]): void {
             );
           }
           break;
+        case "clickAction":
+          validateSelector(field.selector, `${fieldPath}.selector`, frag, errors);
+          if (field.filter) {
+            validateFilter(field.filter, `${fieldPath}.filter`, frag, errors);
+          }
+          break;
       }
     }
   }
@@ -296,7 +314,7 @@ export function validateSpec(raw: unknown): ValidationResult {
   return { valid: semanticErrors.length === 0, errors: semanticErrors };
 }
 
-function matchesFilter(el: Element, filter: Filter): boolean {
+export function matchesFilter(el: Element, filter: Filter): boolean {
   if (filter.textMatches !== undefined) {
     if (!new RegExp(filter.textMatches).test(el.textContent ?? "")) {
       return false;
@@ -597,6 +615,25 @@ function executeField(
       }
 
       return applyDerive(value, field.fn);
+    }
+    case "clickAction": {
+      const element = Array.from(scope.querySelectorAll(field.selector)).find(
+        (candidate) =>
+          field.filter ? matchesFilter(candidate, field.filter) : true,
+      );
+      if (!element) {
+        return null;
+      }
+
+      const action: ClickActionValue = {
+        type: "clickAction",
+        selector: field.selector,
+      };
+      if (field.filter) {
+        action.filter = field.filter;
+      }
+
+      return action;
     }
   }
 }

@@ -1,0 +1,26 @@
+<div class="w-[300px] max-w-[300px] rounded-2xl bg-white/95 p-3 text-slate-900">
+  <div class="space-y-2">
+    <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{data.todoSection}}</div>
+
+    <div data-each="data.todoItems" data-as="todo" class="rounded-xl bg-slate-50 px-3 py-2">
+      <div class="flex items-start gap-2">
+        <div class="min-w-0 flex-1">
+          <a href="{{todo.courseHref}}" class="block min-w-0">
+            <div class="truncate text-sm font-medium text-slate-900" aria-label="{{todo.titleAriaLabel}}">{{todo.title}}</div>
+            <div class="mt-0.5 truncate text-xs text-slate-500">{{todo.courseName}}</div>
+          </a>
+        </div>
+
+        <button data-action="{{todo.dismissButtonAction}}" aria-label="{{todo.dismissButtonText}}" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-200 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300">
+          <span aria-hidden="true" class="text-lg leading-none">×</span>
+        </button>
+      </div>
+
+      <div class="mt-1.5 flex items-center gap-2 text-[11px] text-slate-500">
+        <span>{{todo.pointsText}}</span>
+        <span aria-hidden="true" class="text-slate-300">•</span>
+        <span>{{todo.dueDateText}}</span>
+      </div>
+    </div>
+  </div>
+</div>

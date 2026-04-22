@@ -53,7 +53,7 @@ export async function submitAugmentationRequest(
     payload: request,
   });
 
-  if (!res || !res?.data) logger.error("Failed to return spec.");
+  if (!res || !res?.data) logger.error("Failed to return extraction spec.");
   return res?.data ?? null;
 }
 
