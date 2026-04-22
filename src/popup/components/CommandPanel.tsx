@@ -62,23 +62,23 @@ const STRATEGY_OPTIONS: {
   icon: string;
 }[] = [
   {
-    value: "json-render",
-    label: "Page update",
-    description: "Create a new interface directly on the current page",
-    icon: "🎨",
-  },
-  {
     value: "sample",
     label: "Sample",
     description: "Example data, no AI calls",
     icon: "📐",
   },
-  //   {
-  //   value: "sample",
-  //   label: "Data-aware",
-  //   description: "Use available page data to shape the generated experience",
-  //   icon: "📐",
-  // },
+  {
+    value: "markup",
+    label: "Markup Generation",
+    description: "Generate HTML code",
+    icon: "🤖",
+  },
+  {
+    value: "json-render",
+    label: "Page update",
+    description: "Create a new interface directly on the current page",
+    icon: "🎨",
+  },
 ];
 
 export function CommandPanel({
@@ -102,9 +102,9 @@ export function CommandPanel({
   );
   const isSubmitting = generationStep !== null;
   const [requestSettings, setRequestSettings] = useState<RequestSettings>({
-    strategy: "json-render",
+    strategy: "sample",
   });
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(true);
   const submissionVersionRef = useRef(0);
 
   const isPopup = surface === "popup";
@@ -193,13 +193,13 @@ export function CommandPanel({
 
         if (parsed.data) {
           setGenerationStep({ phase: "ui", data: parsed.data });
-          // const uiSpecString = await createUiSpec(prompt, surface, screenshot, {
-          //   selectedElement,
-          //   data: parsed.data,
-          //   strategy: requestSettings.strategy,
-          // });
+          const uiSpecString = await createUiSpec(prompt, surface, screenshot, {
+            selectedElement,
+            data: parsed.data,
+            strategy: requestSettings.strategy,
+          });
 
-          const uiSpecString = "a";
+          // const uiSpecString = "a";
 
           if (submissionVersion !== submissionVersionRef.current) {
             return;

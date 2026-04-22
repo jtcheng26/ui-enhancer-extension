@@ -1,0 +1,13 @@
+## Props contract
+
+The component will receive props matching the shape exactly:
+
+{{data}}
+
+Use field names exactly as they appear. Do not invent fields. Do not hardcode
+literal values from the data — always reference them through props.
+
+---
+
+User request:
+{{prompt}}

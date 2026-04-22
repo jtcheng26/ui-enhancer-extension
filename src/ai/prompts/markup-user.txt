@@ -1,0 +1,5 @@
+User request:
+{{prompt}}
+
+Data schema (source of truth for all slot paths):
+{{data}}

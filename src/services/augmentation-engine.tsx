@@ -438,7 +438,7 @@ export class AugmentationEngine {
         continue;
       }
 
-      mountedAugmentation.renderUpdater?.update(updates);
+      mountedAugmentation.renderUpdater?.update(data);
       mountedAugmentation.lastScrapedData = data;
       logger.info("Updated augmentation renderer state after DOM re-scrape.", {
         id: mountedAugmentation.augmentation.id,
