@@ -1,5 +1,5 @@
 import { Visitor } from "../markup-renderer";
-import { fillDataSlots, resolvePath } from "./shared";
+import { resolvePath } from "./shared";
 
 function expandAliasSlots(el: Element, alias: string, prefix: string) {
   const slotPattern = new RegExp(

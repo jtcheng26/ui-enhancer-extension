@@ -49,12 +49,7 @@ export function renderMarkupString(
       "text/html",
     );
     const transformedDOMTree = transformDOMTree(DOMTree, globalData);
-    // const finalHtml = transformedDOMTree.body.innerHTML;
-    // root.render(<div id="#aui-root" />);
     uiContainer.replaceChildren(transformedDOMTree.body);
-    // const existing = document.getElementById("#aui_root");
-    // if (!existing) uiContainer.appendChild(transformedDOMTree.body);
-    // else existing.replaceWith(transformedDOMTree.body);
   }
 
   render(data);

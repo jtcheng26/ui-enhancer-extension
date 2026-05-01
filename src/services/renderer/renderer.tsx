@@ -15,7 +15,6 @@ export interface RenderUpdater {
   update: (data: Record<string, unknown>) => void;
 }
 
-// T is what is saved in storage to re-run the ui
 export interface RenderSystem {
   render: (
     root: ReactDOM.Root,
