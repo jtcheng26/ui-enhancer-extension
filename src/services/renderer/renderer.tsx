@@ -9,6 +9,8 @@ import {
 } from "@json-render/react";
 import { registry } from "@/ai/ui/catalog";
 import SpecExample from "../../schema/spec.json";
+import SpecMarkup from "../../schema/cards.txt?raw";
+// import SpecMarkup from "../../schema/todo.txt?raw";
 import { MarkupRenderer } from "./markup/markup-renderer";
 
 export interface RenderUpdater {
@@ -64,7 +66,7 @@ export const RENDER_SYSTEMS: Record<RenderSystemId, RenderSystem> = {
   },
   sample: {
     render: (root, data, spec, uiContainer, persistedId) =>
-      jsonRenderer(root, data, SpecExample, persistedId),
+      MarkupRenderer.render(root, data, SpecMarkup, uiContainer, persistedId),
   },
   markup: MarkupRenderer,
 } as const;

@@ -19,6 +19,7 @@ import ExampleMarkup from "@/schema/markup.txt?raw";
 
 // import Raw from "../prompts/temp.txt?raw";
 import { compileSpecStream } from "@json-render/core";
+import rulesSpec from "../prompts/rules.json";
 
 function loadPrompt(template: string, vars: Record<string, string>) {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
@@ -123,9 +124,14 @@ export class ClientAIProvider implements AIProvider {
   }
 
   async generateMarkup(input: UIRequest): Promise<string> {
+    const rules = rulesSpec.rules
+      .map((r, i) => `**${i + 1}. ${r.title}**\n${r.description}\n`)
+      .join("\n");
+    const snapshot = JSON.stringify(input.snapshot);
     const data = recordToShapeJSON(input.data);
+    const systemPrompt = loadPrompt(markupPromptSystem, { rules });
     const promptUser = loadPrompt(markupPromptUser, {
-      // dom,
+      snapshot: snapshot,
       data,
       prompt: input.prompt,
     });
@@ -136,7 +142,7 @@ export class ClientAIProvider implements AIProvider {
       //     reasoningEffort: "low",
       //   },
       // },
-      system: markupPromptSystem,
+      system: systemPrompt,
       messages: [
         {
           role: "user",

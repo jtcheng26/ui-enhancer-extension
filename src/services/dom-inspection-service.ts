@@ -111,10 +111,10 @@ export function inspectSelectedDomTree(
     tree: serializeDomNode(element),
   };
 
-  logger.info(
-    "Stubbed DOM tree snapshot for augmentation request.",
-    JSON.stringify(snapshot),
-  );
+  // logger.info(
+  //   "Stubbed DOM tree snapshot for augmentation request.",
+  //   JSON.stringify(snapshot),
+  // );
 
   return snapshot;
 }

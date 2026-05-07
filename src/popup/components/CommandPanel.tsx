@@ -8,8 +8,8 @@ import {
   createUiSpec,
   submitAugmentationRequest,
 } from "../../services/command-service";
-// import Example from "../../schema/dom-extraction-example.json";
-import Example from "@/schema/action.json";
+import Example from "../../schema/dom-extraction-example.json";
+// import Example from "@/schema/action.json";
 // import Example from "../../schema/example.json";
 import SpecExample from "../../schema/spec.json";
 import type {
@@ -164,26 +164,28 @@ export function CommandPanel({
       return;
     }
 
-    const popupShadowRoot = document.querySelector(
-      "ai-ui-floating-popup",
-    )?.shadowRoot;
+    // const popupShadowRoot = document.querySelector(
+    //   "ai-ui-floating-popup",
+    // )?.shadowRoot;
 
-    const popup = popupShadowRoot?.getElementById("aui-popup") as HTMLElement;
-    const screenshot = await withElementHidden(popup, () =>
-      screenshotElement(
-        resolveSelectedElement(selectedElement as SelectedElement) as Element,
-      ),
-    );
+    // const popup = popupShadowRoot?.getElementById("aui-popup") as HTMLElement;
+    // const screenshot = await withElementHidden(popup, () =>
+    //   screenshotElement(
+    //     resolveSelectedElement(selectedElement as SelectedElement) as Element,
+    //   ),
+    // );
+
+    const screenshot = "";
 
     const submissionVersion = submissionVersionRef.current + 1;
     submissionVersionRef.current = submissionVersion;
     setGenerationStep({ phase: "extractor" });
     try {
-      const extractor = Example as DOMExtractorSpec;
+      // const extractor = Example as DOMExtractorSpec;
 
-      // const extractor = await submitAugmentationRequest(prompt, surface, {
-      //   selectedElement,
-      // });
+      const extractor = await submitAugmentationRequest(prompt, surface, {
+        selectedElement,
+      });
 
       if (submissionVersion !== submissionVersionRef.current) {
         return;

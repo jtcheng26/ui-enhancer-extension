@@ -4,6 +4,11 @@ Your output is a single HTML fragment. No <!DOCTYPE>, no <html>, no <head>, no <
 
 ---
 
+## Reference snapshot
+You will receive a snapshot of the existing DOM element this markup will replace or augment. Use it as visual and structural reference — it shows the design language, spacing conventions, and hierarchy the user is working within.The output does not need to replicate the snapshot's content or structure. It is context, not a template. Let it inform your aesthetic decisions — density, typographic scale, use of color, card shape — without constraining you to reproduce it literally. If the user's request diverges from the snapshot's style, follow the request.
+
+---
+
 ## Slot syntax
 
 Data is injected at render time using dot-notation slots wrapped in double curly braces.
@@ -69,45 +74,8 @@ The result should look like it came from a skilled designer who knows Tailwind w
 
 ## Design principles
 
-**1. CRITICAL: Generic microcopy can be adapted.**
-Short, generic text (including button text) does not always need to be rendered verbatim. If a label or piece of microcopy is purely functional and visually noisy, you may restyle, abbreviate, or replace it with a clearer equivalent treatment, such as an icon, as long as the meaning remains clear in the UI.
-
-**2. Ruthless hierarchy.**
-Every layout decision should make the most important thing the most visually prominent. One element should be clearly "first" — larger, bolder, or more prominent than everything else.
-
-**3. Group related information.**
-Fields that belong together should be visually proximate with consistent internal spacing. Use flex or grid to align related items, not a flat sequence of block elements.
-
-**4. Less is more.**
-Not every field needs to be visible. If a field is a URL that belongs on a link target, put it in the href — do not also render it as visible text. If a field is an ID or internal key, omit it entirely. Ask: would a real designer put this on screen?
-
-**5. Links on meaningful targets.**
-If a url or href field exists, make the primary content element (the title, the card, the image) the link. Do not add a standalone "Open" or "Visit" button unless the request explicitly asks for one.
-
-**6. Whitespace is not waste.**
-Generous padding and spacing makes UI feel designed. Cramped layouts feel generated. Err toward more whitespace.
-
-**7. Neutral, system-agnostic aesthetic.**
-The output will be injected into arbitrary websites. Use neutral grays and clean typography. Avoid strong brand colors unless the data schema includes a color field. The UI should feel native to a high-quality design system, not tied to any specific brand.
-
-**8. Anchor tags are inline elements — size them accordingly.**
-`<a>` tags do not have intrinsic size. Do not use `<a>` as a block-level layout container with padding and dimensions — wrap it around inline content (text, an icon) or make it a block explicitly with `block` or `flex` classes if it needs to fill a container. Prefer wrapping the meaningful content element (a heading, an image, a card) in a single `<a>` rather than nesting many elements under one anchor. A card that is entirely clickable should have one `<a>` wrapping the outermost container, not multiple anchors competing inside it. Never nest `<a>` tags.
+{{rules}}
 
 ---
 
-## Before writing the markup, reason internally (do not include in output):
-
-- What is the single most important piece of information in this data? That is the visual anchor.
-- Which fields are supporting detail that should be present but subordinate?
-- Which fields are structural (URLs, IDs, flags) that should wire into attributes or be omitted entirely?
-- What is the simplest layout that creates clear hierarchy — a single card? a header with a detail row? a media object?
-
-Then output the HTML fragment only. No explanation, no markdown fences, no comments.
-
----
-
-User request:
-{{prompt}}
-
-Data schema (source of truth for all slot paths, all prefixed with `data.`):
-{{schema}}
+Output the HTML fragment only. No explanation, no markdown fences, no comments.

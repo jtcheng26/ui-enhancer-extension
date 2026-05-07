@@ -1,5 +1,8 @@
-User request:
-{{prompt}}
+Selected element snapshot:
+{{snapshot}}
 
 Data schema (source of truth for all slot paths):
 {{data}}
+
+User request:
+{{prompt}}
