@@ -2,6 +2,7 @@ import type {
   AugmentationRequest,
   ExtensionRuntimeMessage,
   SelectedElement,
+  UsabilityViolation,
 } from "../types";
 import { requestStore } from "../storage/request-store";
 import { settingsStore } from "../storage/settings-store";
@@ -14,6 +15,7 @@ import {
 } from "./dom-inspection-service";
 import { DOMExtractorSpec, ExtractedValue } from "./dom-extractor";
 import { RenderSystemId } from "./renderer/renderer";
+import rulesSpec from "../ai/prompts/rules.json";
 
 interface SubmitAugmentationRequestOptions {
   selectedElement?: SelectedElement | null;
@@ -95,4 +97,46 @@ export async function createUiSpec(
   }
 
   return res?.data ?? null;
+}
+
+export async function detectUsabilityIssues(
+  source: AugmentationRequest["source"],
+  useRules: boolean,
+): Promise<UsabilityViolation[]> {
+  const res = await browser.runtime.sendMessage({
+    type: "command/detect-usability",
+    payload: {
+      source,
+      useRules,
+      rules: rulesSpec.rules,
+    },
+  } satisfies ExtensionRuntimeMessage);
+
+  if (!res) {
+    logger.error("Failed to run usability detection.");
+    return [];
+  }
+
+  if (!res.data && res.error) {
+    logger.error("Usability detection returned an error.", res.error);
+  }
+
+  return res.data ?? [];
+}
+
+export async function showUsabilityViolations(
+  violations: UsabilityViolation[],
+) {
+  await browser.runtime.sendMessage({
+    type: "usability/show-violations",
+    payload: {
+      violations,
+    },
+  } satisfies ExtensionRuntimeMessage);
+}
+
+export async function clearUsabilityViolations() {
+  await browser.runtime.sendMessage({
+    type: "usability/clear-violations",
+  } satisfies ExtensionRuntimeMessage);
 }

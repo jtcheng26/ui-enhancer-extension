@@ -507,6 +507,8 @@ export class AugmentationEngine {
   }
 
   private configurePreviewOverlay() {
+    this.previewOverlay.setAttribute("data-aui-overlay", "true");
+
     Object.assign(this.previewOverlay.style, {
       boxSizing: "border-box",
       pointerEvents: "none",

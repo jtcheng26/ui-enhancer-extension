@@ -23,6 +23,7 @@ export interface SelectedElement {
 }
 
 export interface JsonifiedDomNode {
+  selector: string;
   role: string;
   tag?: string;
   name?: string;
@@ -62,6 +63,31 @@ export interface CreateUiCommandPayload {
   screenshot: string;
   strategy: RenderSystemId;
   data: Record<string, ExtractedValue>;
+}
+
+export interface UsabilityRule {
+  id: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+}
+
+export interface UsabilityViolation {
+  ruleId: string;
+  selector: string;
+  description: string;
+  resolutionPrompt: string;
+}
+
+export interface UsabilityDetectionContext {
+  snapshot: SelectedDomTreeSnapshot;
+  screenshot: string;
+}
+
+export interface DetectUsabilityCommandPayload {
+  source: AugmentationRequest["source"];
+  useRules: boolean;
+  rules: UsabilityRule[];
 }
 
 export interface DomQueryPayload {
@@ -163,6 +189,10 @@ export type ExtensionRuntimeMessage =
       payload: AugmentationRequest;
     }
   | {
+      type: "command/detect-usability";
+      payload: DetectUsabilityCommandPayload;
+    }
+  | {
       type: "command/create-ui";
       payload: CreateUiCommandPayload;
     }
@@ -193,6 +223,18 @@ export type ExtensionRuntimeMessage =
     }
   | {
       type: "floating-ui/close";
+    }
+  | {
+      type: "usability/get-context";
+    }
+  | {
+      type: "usability/show-violations";
+      payload: {
+        violations: UsabilityViolation[];
+      };
+    }
+  | {
+      type: "usability/clear-violations";
     }
   | {
       type: "dom/query";

@@ -4,13 +4,13 @@ import type { ExtensionRuntimeMessage } from "../types";
 import { persistedAugmentationStore } from "../storage/persisted-augmentation-store";
 import { settingsStore } from "../storage/settings-store";
 import { AugmentationEngine } from "../services/augmentation-engine";
+import { getUsabilityDetectionContext } from "../services/dom-inspection-service";
 import { logger } from "../utils/logger";
 import { ClickSelectController } from "./click-select";
 import { FloatingPopupController } from "./floating-popup-controller";
 import { HoverHighlighter } from "./hover-highlighter";
 import { SelectionOverlayRenderer } from "./selection-overlay";
 import { SelectionStateManager } from "./selection-state";
-import { jsonRenderSystemPrompt } from "@/ai/ui/prompt";
 
 export async function initializeContentPrototype(ctx: ContentScriptContext) {
   const settings = await settingsStore.get();
@@ -75,6 +75,32 @@ export async function initializeContentPrototype(ctx: ContentScriptContext) {
       })();
 
       return true;
+    }
+
+    if (message.type === "usability/get-context") {
+      (async () => {
+        try {
+          const data = await getUsabilityDetectionContext();
+          sendResponse({ ok: true, data });
+        } catch (error) {
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+
+      return true;
+    }
+
+    if (message.type === "usability/show-violations") {
+      overlay.showUsabilityViolations(message.payload.violations);
+      sendResponse({ ok: true });
+    }
+
+    if (message.type === "usability/clear-violations") {
+      overlay.clearUsabilityViolations();
+      sendResponse({ ok: true });
     }
   };
 

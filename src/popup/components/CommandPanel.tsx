@@ -5,7 +5,10 @@ import { discoverAndStoreSchema } from "../../schema/schema-service";
 import { persistedAugmentationStore } from "../../storage/persisted-augmentation-store";
 import { settingsStore } from "../../storage/settings-store";
 import {
+  clearUsabilityViolations as clearUsabilityViolationHighlights,
   createUiSpec,
+  detectUsabilityIssues,
+  showUsabilityViolations as showUsabilityViolationHighlights,
   submitAugmentationRequest,
 } from "../../services/command-service";
 import Example from "../../schema/dom-extraction-example.json";
@@ -18,6 +21,7 @@ import type {
   PersistedAugmentation,
   SchemaDiscoveryResult,
   SelectedElement,
+  UsabilityViolation,
 } from "../../types";
 import type {
   DOMExtractorSpec,
@@ -49,12 +53,17 @@ type AugmentationStrategy = RenderSystemId;
 
 interface RequestSettings {
   strategy: AugmentationStrategy;
+  useUsabilityRules: boolean;
 }
 
 type GenerationStep =
   | { phase: "extractor" }
   | { phase: "parsing"; data: Record<string, ExtractedValue> }
   | { phase: "ui"; data: Record<string, ExtractedValue> };
+
+interface UsabilityReviewState {
+  violations: UsabilityViolation[];
+}
 
 const STRATEGY_OPTIONS: {
   value: AugmentationStrategy;
@@ -101,9 +110,16 @@ export function CommandPanel({
   const [generationStep, setGenerationStep] = useState<GenerationStep | null>(
     null,
   );
-  const isSubmitting = generationStep !== null;
+  const [isDetectingUsability, setIsDetectingUsability] = useState(false);
+  const [usabilityReview, setUsabilityReview] =
+    useState<UsabilityReviewState | null>(null);
+  const [usabilityStatusMessage, setUsabilityStatusMessage] = useState<
+    string | null
+  >(null);
+  const isBusy = generationStep !== null || isDetectingUsability;
   const [requestSettings, setRequestSettings] = useState<RequestSettings>({
     strategy: "sample",
+    useUsabilityRules: true,
   });
   const [settingsOpen, setSettingsOpen] = useState(true);
   const submissionVersionRef = useRef(0);
@@ -141,8 +157,14 @@ export function CommandPanel({
   }, [isPreviewMode, onPreviewModeChange]);
 
   useEffect(() => {
-    onLoadingStateChange?.(isSubmitting);
-  }, [isSubmitting, onLoadingStateChange]);
+    onLoadingStateChange?.(isBusy);
+  }, [isBusy, onLoadingStateChange]);
+
+  useEffect(() => {
+    return () => {
+      void clearUsabilityViolationHighlights();
+    };
+  }, []);
 
   useEffect(() => {
     if (!augmentationEngine || !pendingAugmentationId) {
@@ -163,6 +185,8 @@ export function CommandPanel({
     if (!prompt.trim()) {
       return;
     }
+
+    await clearUsabilityReview();
 
     // const popupShadowRoot = document.querySelector(
     //   "ai-ui-floating-popup",
@@ -245,6 +269,70 @@ export function CommandPanel({
   function handleCancelLoading() {
     submissionVersionRef.current += 1;
     setGenerationStep(null);
+  }
+
+  async function acknowledgeDetectedViolations(
+    _violations: UsabilityViolation[],
+  ) {}
+
+  async function clearUsabilityReview() {
+    setUsabilityReview(null);
+    setUsabilityStatusMessage(null);
+    await clearUsabilityViolationHighlights();
+  }
+
+  async function showDetectedViolations(
+    violations: UsabilityViolation[],
+    options: {
+      skipAcknowledgement?: boolean;
+    } = {},
+  ) {
+    if (options.skipAcknowledgement) {
+      await acknowledgeDetectedViolations(violations);
+      return;
+    }
+
+    setUsabilityReview({ violations });
+    await showUsabilityViolationHighlights(violations);
+  }
+
+  async function handleDetectUsabilityIssues(options?: {
+    skipAcknowledgement?: boolean;
+  }) {
+    setIsDetectingUsability(true);
+    await clearUsabilityReview();
+
+    try {
+      const violations = await detectUsabilityIssues(
+        surface,
+        requestSettings.useUsabilityRules,
+      );
+
+      if (violations.length === 0) {
+        setUsabilityStatusMessage(
+          "No clear usability issues were detected on the page.",
+        );
+        return;
+      }
+
+      await showDetectedViolations(violations, options);
+    } finally {
+      setIsDetectingUsability(false);
+    }
+  }
+
+  async function handleAcknowledgeUsabilityIssues() {
+    if (!usabilityReview) {
+      return;
+    }
+
+    await acknowledgeDetectedViolations(usabilityReview.violations);
+    await clearUsabilityReview();
+    setUsabilityStatusMessage("Issues acknowledged.");
+  }
+
+  async function handleCancelUsabilityIssues() {
+    await clearUsabilityReview();
   }
 
   async function handleConfirmAugmentation() {
@@ -600,7 +688,57 @@ export function CommandPanel({
                   </div>
                 </div>
 
-                {/* Future options slot — add more <div className="grid gap-1.5"> sections here */}
+                <div className="grid gap-1.5">
+                  <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    Usability detection
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRequestSettings((prev) => ({
+                        ...prev,
+                        useUsabilityRules: !prev.useUsabilityRules,
+                      }))
+                    }
+                    className={`flex items-center justify-between rounded-xl border p-3 text-left transition hover:-translate-y-0.5 cursor-pointer ${
+                      requestSettings.useUsabilityRules
+                        ? "border-amber-300 bg-amber-50"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p
+                        className={`text-xs font-semibold ${
+                          requestSettings.useUsabilityRules
+                            ? "text-amber-900"
+                            : "text-slate-700"
+                        }`}
+                      >
+                        Use current rules
+                      </p>
+                      <p
+                        className={`text-[11px] leading-4 ${
+                          requestSettings.useUsabilityRules
+                            ? "text-amber-700"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        {requestSettings.useUsabilityRules
+                          ? "On — detections follow the current usability rule set"
+                          : "Off — detections can flag any usability issue they find"}
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${
+                        requestSettings.useUsabilityRules
+                          ? "bg-amber-200 text-amber-900"
+                          : "bg-slate-200 text-slate-600"
+                      }`}
+                    >
+                      {requestSettings.useUsabilityRules ? "On" : "Off"}
+                    </span>
+                  </button>
+                </div>
               </div>
             </Collapsible.Content>
           </Collapsible.Root>
@@ -609,9 +747,17 @@ export function CommandPanel({
             <button
               className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:opacity-60 cursor-pointer"
               type="submit"
-              disabled={isSubmitting}
+              disabled={isBusy}
             >
-              {isSubmitting ? "Building..." : "Generate"}
+              {generationStep ? "Building..." : "Generate"}
+            </button>
+            <button
+              className="inline-flex items-center justify-center rounded-full bg-amber-100 px-4 py-2 text-sm font-medium text-amber-900 transition hover:-translate-y-0.5 hover:bg-amber-200 disabled:translate-y-0 disabled:opacity-60 cursor-pointer"
+              type="button"
+              disabled={isBusy}
+              onClick={() => void handleDetectUsabilityIssues()}
+            >
+              {isDetectingUsability ? "Checking..." : "Detect Issues"}
             </button>
             <button
               className="inline-flex items-center justify-center rounded-full bg-sky-100 px-4 py-2 text-sm font-medium text-slate-800 transition hover:-translate-y-0.5 hover:bg-sky-200 cursor-pointer"
@@ -622,6 +768,80 @@ export function CommandPanel({
             </button>
           </div>
         </form>
+
+        {usabilityStatusMessage ? (
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-3">
+            <p className="text-sm font-medium text-emerald-900">
+              {usabilityStatusMessage}
+            </p>
+          </div>
+        ) : null}
+
+        {usabilityReview ? (
+          <section className="grid gap-3 rounded-2xl border border-rose-200 bg-rose-50/80 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-700">
+                  Usability Review
+                </p>
+                <h2 className="text-lg font-semibold tracking-tight text-slate-950">
+                  Highlighted issues on the page
+                </h2>
+              </div>
+              <span className="inline-flex min-w-8 items-center justify-center rounded-full bg-rose-200 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-rose-900">
+                {usabilityReview.violations.length}
+              </span>
+            </div>
+
+            <p className="text-sm leading-6 text-slate-600">
+              Hover the page highlights to inspect each violation, then
+              acknowledge or cancel this review.
+            </p>
+
+            <div className="grid max-h-48 gap-2 overflow-auto">
+              {usabilityReview.violations.map((violation, index) => (
+                <article
+                  key={`${violation.ruleId}-${violation.selector}-${index}`}
+                  className="grid gap-1 rounded-2xl border border-rose-100 bg-white/80 p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-900">
+                        {violation.description}
+                      </p>
+                      <p className="mt-1 text-[11px] leading-4 text-slate-600">
+                        {violation.resolutionPrompt}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800">
+                      {violation.ruleId}
+                    </span>
+                  </div>
+                  <p className="truncate text-[11px] text-slate-500">
+                    {violation.selector}
+                  </p>
+                </article>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="inline-flex items-center justify-center rounded-full bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-rose-500 cursor-pointer"
+                type="button"
+                onClick={() => void handleAcknowledgeUsabilityIssues()}
+              >
+                Acknowledge
+              </button>
+              <button
+                className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50 cursor-pointer"
+                type="button"
+                onClick={() => void handleCancelUsabilityIssues()}
+              >
+                Cancel
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         {/* ── Saved enhancements ── */}
         <section className="grid gap-3">

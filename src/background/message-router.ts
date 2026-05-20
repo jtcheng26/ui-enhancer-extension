@@ -3,6 +3,17 @@ import { discoverAndStoreSchema } from "../schema/schema-service";
 import { logger } from "../utils/logger";
 import { commandHandler } from "./handlers/command";
 
+async function sendMessageToActiveTab(message: ExtensionRuntimeMessage) {
+  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+  const activeTabId = tabs[0]?.id;
+
+  if (!activeTabId) {
+    throw new Error("No active tab found.");
+  }
+
+  return browser.tabs.sendMessage(activeTabId, message);
+}
+
 export function registerMessageRouter() {
   browser.runtime.onMessage.addListener(
     (message: ExtensionRuntimeMessage, _, sendResponse) => {
@@ -21,29 +32,38 @@ export function registerMessageRouter() {
             .then((res) => sendResponse({ data: res }))
             .catch((err) => sendResponse({ error: err }));
           return true;
-        case "augmentation/inject":
-          browser.tabs
-            .query({ active: true, currentWindow: true })
-            .then(async (tabs) => {
-              const activeTabId = tabs[0]?.id;
-
-              if (!activeTabId) {
-                sendResponse({
-                  ok: false,
-                  handled: false,
-                  error: "No active tab found for augmentation injection.",
-                });
-                return;
+        case "command/detect-usability":
+          sendMessageToActiveTab({ type: "usability/get-context" })
+            .then((res) => {
+              if (!res?.data) {
+                throw new Error("No page context returned for usability scan.");
               }
 
-              await browser.tabs.sendMessage(activeTabId, message);
-              sendResponse({ ok: true, handled: true });
+              return commandHandler().detectUsabilityIssues({
+                ...message.payload,
+                ...res.data,
+              });
             })
+            .then((res) => sendResponse({ data: res }))
+            .catch((err) =>
+              sendResponse({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          return true;
+        case "augmentation/inject":
+        case "usability/show-violations":
+        case "usability/clear-violations":
+          sendMessageToActiveTab(message)
+            .then(() => sendResponse({ ok: true, handled: true }))
             .catch((err) =>
               sendResponse({
                 ok: false,
                 handled: false,
-                error: err instanceof Error ? err.message : String(err),
+                error:
+                  err instanceof Error
+                    ? err.message
+                    : String(err),
               }),
             );
           return true;
@@ -55,12 +75,13 @@ export function registerMessageRouter() {
             handled: true,
             enabled: message.payload.enabled,
           };
+        case "usability/get-context":
         case "floating-ui/open":
         case "floating-ui/close":
           return {
             ok: true,
             handled: true,
-            note: "Floating UI messages are handled directly inside the content script.",
+            note: "This message is handled directly inside the content script.",
           };
         default:
           return {

@@ -1,4 +1,5 @@
 import type { ElementRect, SelectedElement } from '../types';
+import { buildElementSelector } from '@/services/selector';
 
 type SelectionListener = (selectedElement: SelectedElement | null) => void;
 
@@ -10,19 +11,6 @@ function rectFromElement(element: HTMLElement): ElementRect {
     width: rect.width,
     height: rect.height,
   };
-}
-
-function buildSelector(element: HTMLElement) {
-  if (element.id) {
-    return `#${element.id}`;
-  }
-
-  const classNames = Array.from(element.classList).slice(0, 2);
-  if (classNames.length > 0) {
-    return `${element.tagName.toLowerCase()}.${classNames.join('.')}`;
-  }
-
-  return element.tagName.toLowerCase();
 }
 
 export function mapElementToSelectedElement(element: HTMLElement): SelectedElement {
@@ -41,7 +29,7 @@ export function mapElementToSelectedElement(element: HTMLElement): SelectedEleme
   return {
     id: crypto.randomUUID(),
     tagName: element.tagName.toLowerCase(),
-    selector: buildSelector(element),
+    selector: buildElementSelector(element),
     textPreview: element.textContent?.trim().slice(0, 140) ?? '',
     attributes,
     rect: rectFromElement(element),

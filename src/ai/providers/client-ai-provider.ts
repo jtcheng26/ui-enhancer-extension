@@ -1,5 +1,9 @@
-import { AugmentationRequest } from "@/types";
-import { AIProvider, UIRequest } from "./ai-provider";
+import { AugmentationRequest, UsabilityViolation } from "@/types";
+import {
+  AIProvider,
+  UIRequest,
+  UsabilityDetectionRequest,
+} from "./ai-provider";
 import {
   DOMExtractorSpec,
   DOMExtractorSpecSchema,
@@ -76,6 +80,25 @@ export function recordToShapeJSON(
   );
   return JSON.stringify(shape, null, 2);
 }
+
+const usabilityViolationsSchema = z.object({
+  violations: z.array(
+    z.object({
+      ruleId: z.string().min(1),
+      selector: z.string().min(1),
+      description: z.string().min(1).max(160),
+      resolutionPrompt: z.string().min(1).max(220),
+    }),
+  ),
+});
+
+const usabilityDetectionSystemPrompt = [
+  "Find clear usability issues from the screenshot and accessibility tree.",
+  "Use selector values exactly as provided in the tree.",
+  "Keep descriptions short and concrete.",
+  "For each issue, add a brief fix prompt suitable for UI generation.",
+  "The fix prompt should state what to change for that element, not explain why.",
+].join(" ");
 
 export class ClientAIProvider implements AIProvider {
   openai: OpenAIProvider;
@@ -168,6 +191,52 @@ export class ClientAIProvider implements AIProvider {
       case "markup":
         return await this.generateMarkup(input);
     }
+  }
+
+  async detectUsabilityIssues(
+    input: UsabilityDetectionRequest,
+  ): Promise<UsabilityViolation[]> {
+    const prompt = input.useRules
+      ? [
+          "Apply these rules when identifying issues. Prefer enabled rules first; only include disabled rules if the issue is obvious.",
+          "Rules:",
+          JSON.stringify(input.rules),
+          "Accessibility tree:",
+          JSON.stringify(input.snapshot.tree),
+        ].join("\n\n")
+      : "Highlight any clear usability issues you find.";
+
+    const result = await generateText({
+      model: this.openai("gpt-5.4-mini"),
+      providerOptions: {
+        openai: {
+          reasoningEffort: "low",
+          strictJsonSchema: false,
+        },
+      },
+      output: Output.object({
+        schema: usabilityViolationsSchema,
+      }),
+      system: usabilityDetectionSystemPrompt,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: prompt,
+            },
+            {
+              type: "image",
+              image: input.screenshot,
+              mediaType: "image/jpeg",
+            },
+          ],
+        },
+      ],
+    });
+
+    return result.output.violations;
   }
 
   async generateExtractor(

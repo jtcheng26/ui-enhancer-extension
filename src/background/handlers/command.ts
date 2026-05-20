@@ -1,5 +1,10 @@
 import { ClientAIProvider } from "@/ai/providers/client-ai-provider";
-import { AugmentationRequest, CreateUiCommandPayload } from "@/types";
+import {
+  AugmentationRequest,
+  CreateUiCommandPayload,
+  UsabilityDetectionContext,
+  DetectUsabilityCommandPayload,
+} from "@/types";
 
 export const commandHandler = () => ({
   submit: (payload: AugmentationRequest) => {
@@ -11,5 +16,11 @@ export const commandHandler = () => ({
     const ai = new ClientAIProvider(import.meta.env.WXT_OPENAI_API_KEY);
     const spec = ai.generateUI(payload);
     return spec;
+  },
+  detectUsabilityIssues: (
+    payload: DetectUsabilityCommandPayload & UsabilityDetectionContext,
+  ) => {
+    const ai = new ClientAIProvider(import.meta.env.WXT_OPENAI_API_KEY);
+    return ai.detectUsabilityIssues(payload);
   },
 });

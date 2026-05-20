@@ -1,4 +1,8 @@
-import type { SelectedDomTreeSnapshot, SelectedElement } from "../types";
+import type {
+  SelectedDomTreeSnapshot,
+  SelectedElement,
+  UsabilityDetectionContext,
+} from "../types";
 import { logger } from "../utils/logger";
 import { formatSnapshotPrompt, serializeAccessibilityTree } from "./snapshot";
 
@@ -58,31 +62,116 @@ export function inspectSelectedDomTree(
   return snapshot;
 }
 
-export async function withElementHidden<T>(
-  element: Element,
+export function inspectPageDomTree(
+  root: ParentNode = document,
+): SelectedDomTreeSnapshot | null {
+  const doc = root instanceof Document ? root : document;
+  const element = doc.body;
+
+  if (!element) {
+    logger.warn("Could not build page accessibility snapshot.");
+    return null;
+  }
+
+  const tree = serializeAccessibilityTree(element);
+  const selector = "body";
+
+  return {
+    selectedElementId: "page-root",
+    selector,
+    pageUrl: window.location.href,
+    tree,
+    prompt: formatSnapshotPrompt(selector, tree),
+  };
+}
+
+function getCaptureDataUrl() {
+  return browser.runtime.sendMessage({ type: "CAPTURE" }).then((res) => {
+    if (!res?.dataUrl) {
+      throw new Error("Failed to capture the current page screenshot.");
+    }
+
+    return res.dataUrl as string;
+  });
+}
+
+function getExtensionUiElements(root: ParentNode = document): HTMLElement[] {
+  const doc = root instanceof Document ? root : document;
+
+  return Array.from(
+    doc.querySelectorAll<HTMLElement>(
+      "ai-ui-floating-popup, [data-aui-overlay], .aui-injected-placeholder",
+    ),
+  );
+}
+
+export async function withElementsHidden<T>(
+  elements: Iterable<Element>,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const el = element as HTMLElement;
-  const original = el.style.visibility;
-  el.style.visibility = "hidden";
-
-  // Wait for browser to paint the hidden state
-  await new Promise((r) =>
-    requestAnimationFrame(() => requestAnimationFrame(r)),
+  const hiddenElements = Array.from(elements).filter(
+    (element): element is HTMLElement => element instanceof HTMLElement,
   );
+
+  const originalVisibilities = new Map<HTMLElement, string>();
+
+  for (const element of hiddenElements) {
+    originalVisibilities.set(element, element.style.visibility);
+    element.style.visibility = "hidden";
+  }
+
+  if (hiddenElements.length > 0) {
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    );
+  }
 
   try {
     return await fn();
   } finally {
-    el.style.visibility = original;
+    for (const [element, originalVisibility] of originalVisibilities) {
+      element.style.visibility = originalVisibility;
+    }
   }
+}
+
+export async function withElementHidden<T>(
+  element: Element,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return withElementsHidden([element], fn);
+}
+
+export async function captureVisiblePageScreenshot() {
+  const dataUrl = await getCaptureDataUrl();
+  return dataUrl.replace(/^data:image\/\w+;base64,/, "");
+}
+
+export async function getUsabilityDetectionContext(
+  root: ParentNode = document,
+): Promise<UsabilityDetectionContext | null> {
+  const snapshot = inspectPageDomTree(root);
+
+  if (!snapshot) {
+    return null;
+  }
+
+  const screenshot = await withElementsHidden(
+    getExtensionUiElements(root),
+    captureVisiblePageScreenshot,
+  );
+
+  return {
+    snapshot,
+    screenshot,
+  };
 }
 
 export async function screenshotElement(element: Element) {
   // element.scrollIntoView({ behavior: "instant", block: "center" });
   await new Promise((r) => setTimeout(r, 150));
 
-  const { dataUrl } = await browser.runtime.sendMessage({ type: "CAPTURE" });
+  const dataUrl = await getCaptureDataUrl();
 
   const rect = element.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;

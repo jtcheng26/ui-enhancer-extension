@@ -6,6 +6,7 @@ import {
 } from "dom-accessibility-api";
 
 import type { JsonifiedDomNode } from "../types";
+import { buildElementSelector } from "./selector";
 
 const MAX_TREE_DEPTH = 12;
 const MAX_CHILDREN_PER_NODE = 25;
@@ -265,6 +266,13 @@ function isInteractiveElement(element: HTMLElement, role: string): boolean {
 }
 
 function shouldSkipElement(element: HTMLElement, forceInclude: boolean): boolean {
+  if (
+    element.matches("[data-aui-overlay], ai-ui-floating-popup") ||
+    element.classList.contains("aui-injected-placeholder")
+  ) {
+    return true;
+  }
+
   if (SKIPPED_TAG_NAMES.has(element.tagName.toLowerCase())) {
     return true;
   }
@@ -325,6 +333,7 @@ function describeNode(
       : undefined;
 
   return {
+    selector: buildElementSelector(element, element.ownerDocument),
     role,
     tag: getTagHint(element, role),
     name,
