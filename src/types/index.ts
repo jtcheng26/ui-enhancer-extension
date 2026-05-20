@@ -23,12 +23,19 @@ export interface SelectedElement {
 }
 
 export interface JsonifiedDomNode {
-  tagName: string;
-  attributes: Record<string, string>;
-  textPreview: string;
-  childCount: number;
-  children: JsonifiedDomNode[];
-  isTruncated?: boolean;
+  role: string;
+  tag?: string;
+  name?: string;
+  description?: string;
+  text?: string;
+  value?: string;
+  level?: number;
+  interactive?: boolean;
+  states?: string[];
+  attrs?: Record<string, string>;
+  children?: JsonifiedDomNode[];
+  truncatedChildCount?: number;
+  truncated?: boolean;
 }
 
 export interface SelectedDomTreeSnapshot {
@@ -36,6 +43,7 @@ export interface SelectedDomTreeSnapshot {
   selector: string;
   pageUrl: string;
   tree: JsonifiedDomNode;
+  prompt: string;
 }
 
 export interface AugmentationRequest {
@@ -54,6 +62,20 @@ export interface CreateUiCommandPayload {
   screenshot: string;
   strategy: RenderSystemId;
   data: Record<string, ExtractedValue>;
+}
+
+export interface DomQueryPayload {
+  selector: string;
+  limit?: number;
+  includeStyles?: string[];
+}
+
+export interface DomQueryElement {
+  selector: string;
+  tagName: string;
+  text: string;
+  attributes: Record<string, string>;
+  styles: Record<string, string>;
 }
 
 export interface InjectedAugmentation {
@@ -171,4 +193,8 @@ export type ExtensionRuntimeMessage =
     }
   | {
       type: "floating-ui/close";
+    }
+  | {
+      type: "dom/query";
+      payload: DomQueryPayload;
     };

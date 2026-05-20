@@ -120,6 +120,7 @@ export const reviseSample = async (
     console.error("Invalid extractor", JSON.stringify(extractor));
     return;
   }
+  const parsedData = parsed.data;
 
   const uiReq: UIRequest = {
     prompt,
@@ -127,7 +128,7 @@ export const reviseSample = async (
     snapshot,
     screenshot: "",
     strategy,
-    data: parsed.data,
+    data: parsedData,
   };
 
 //   console.log("Snapshot chars", JSON.stringify(uiReq.snapshot).length);
@@ -141,7 +142,7 @@ export const reviseSample = async (
   const root = ReactDOM.createRoot(uiContainer);
 
   flushSync(() => {
-    RENDER_SYSTEMS[strategy].render(root, parsed.data, ui, uiContainer);
+    RENDER_SYSTEMS[strategy].render(root, parsedData, ui, uiContainer);
   });
 
   await waitForDomToSettle(uiContainer.getRootNode());

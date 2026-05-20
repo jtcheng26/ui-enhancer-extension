@@ -1,70 +1,6 @@
-import type {
-  JsonifiedDomNode,
-  SelectedDomTreeSnapshot,
-  SelectedElement,
-} from "../types";
+import type { SelectedDomTreeSnapshot, SelectedElement } from "../types";
 import { logger } from "../utils/logger";
-
-const MAX_TREE_DEPTH = 15;
-const MAX_CHILDREN_PER_NODE = 25;
-const MAX_TEXT_PREVIEW_LENGTH = 140;
-
-function getOwnText(element: HTMLElement): string {
-  return Array.from(element.childNodes)
-    .filter((n): n is Text => n.nodeType === Node.TEXT_NODE)
-    .map((n) => n.textContent?.trim() || "")
-    .filter(Boolean)
-    .join(" ");
-}
-
-function mapAttributes(element: HTMLElement) {
-  return Array.from(element.attributes).reduce<Record<string, string>>(
-    (result, attribute) => {
-      result[attribute.name] = attribute.value;
-      return result;
-    },
-    {},
-  );
-}
-
-function getTextPreview(element: HTMLElement): string {
-  const ownText = getOwnText(element);
-
-  return ownText.slice(0, MAX_TEXT_PREVIEW_LENGTH);
-}
-
-function serializeDomNode(
-  element: HTMLElement,
-  currentDepth = 0,
-): JsonifiedDomNode {
-  const childElements = Array.from(element.children).filter(
-    (child): child is HTMLElement => child instanceof HTMLElement,
-  );
-
-  if (currentDepth >= MAX_TREE_DEPTH) {
-    return {
-      tagName: element.tagName.toLowerCase(),
-      attributes: mapAttributes(element),
-      textPreview: getTextPreview(element),
-      childCount: childElements.length,
-      children: [],
-      isTruncated: childElements.length > 0,
-    };
-  }
-
-  const limitedChildren = childElements.slice(0, MAX_CHILDREN_PER_NODE);
-
-  return {
-    tagName: element.tagName.toLowerCase(),
-    attributes: mapAttributes(element),
-    textPreview: getTextPreview(element),
-    childCount: childElements.length,
-    children: limitedChildren.map((child) =>
-      serializeDomNode(child, currentDepth + 1),
-    ),
-    isTruncated: childElements.length > limitedChildren.length,
-  };
-}
+import { formatSnapshotPrompt, serializeAccessibilityTree } from "./snapshot";
 
 export function resolveSelectedElement(
   selectedElement: SelectedElement,
@@ -92,7 +28,7 @@ export function inspectSelectedDomTree(
     return null;
   }
 
-  const element = resolveSelectedElement(selectedElement, root);
+  const element = document.body; // resolveSelectedElement(selectedElement, root);
 
   if (!element) {
     logger.warn(
@@ -104,11 +40,14 @@ export function inspectSelectedDomTree(
     return null;
   }
 
+  const tree = serializeAccessibilityTree(element);
+
   const snapshot: SelectedDomTreeSnapshot = {
     selectedElementId: selectedElement.id,
     selector: selectedElement.selector,
     pageUrl: selectedElement.pageUrl,
-    tree: serializeDomNode(element),
+    tree,
+    prompt: formatSnapshotPrompt(selectedElement.selector, tree),
   };
 
   // logger.info(

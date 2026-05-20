@@ -24,6 +24,7 @@
     "@json-render/shadcn": "^0.17.0",
     "@radix-ui/react-collapsible": "^1.1.12",
     "ai": "^6.0.158",
+    "dom-accessibility-api": "^0.7.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "zod": "^4.3.6"
