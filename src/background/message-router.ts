@@ -32,18 +32,46 @@ export function registerMessageRouter() {
             .then((res) => sendResponse({ data: res }))
             .catch((err) => sendResponse({ error: err }));
           return true;
-        case "command/detect-usability":
+        case "command/get-usability-context":
           sendMessageToActiveTab({ type: "usability/get-context" })
             .then((res) => {
               if (!res?.data) {
                 throw new Error("No page context returned for usability scan.");
               }
 
-              return commandHandler().detectUsabilityIssues({
-                ...message.payload,
-                ...res.data,
-              });
+              sendResponse({ data: res.data });
             })
+            .catch((err) =>
+              sendResponse({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          return true;
+        case "command/detect-usability":
+          Promise.resolve(
+            message.payload.snapshot && message.payload.screenshot
+              ? {
+                  snapshot: message.payload.snapshot,
+                  screenshot: message.payload.screenshot,
+                }
+              : sendMessageToActiveTab({ type: "usability/get-context" }).then(
+                  (res) => {
+                    if (!res?.data) {
+                      throw new Error(
+                        "No page context returned for usability scan.",
+                      );
+                    }
+
+                    return res.data;
+                  },
+                ),
+          )
+            .then((context) =>
+              commandHandler().detectUsabilityIssues({
+                ...message.payload,
+                ...context,
+              }),
+            )
             .then((res) => sendResponse({ data: res }))
             .catch((err) =>
               sendResponse({

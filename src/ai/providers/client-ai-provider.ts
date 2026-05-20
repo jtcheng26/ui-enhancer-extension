@@ -92,12 +92,32 @@ const usabilityViolationsSchema = z.object({
   ),
 });
 
-const usabilityDetectionSystemPrompt = [
-  "Find clear usability issues from the screenshot and accessibility tree.",
+const usabilityRuleAuditSystemPrompt = [
+  "You are a senior product designer reviewing a UI against a supplied usability rule set.",
+  "Use the screenshot to judge visual hierarchy, spacing, affordance, emphasis, density, readability, and state clarity.",
+  "Use the accessibility tree to choose exact selectors from the provided nodes.",
+  "Report only meaningful issues that would materially improve the interface if fixed.",
+  "Prefer issues that affect comprehension, task flow, or interaction clarity over cosmetic nits.",
+  "Anchor every issue to the best matching rule from the passed-in rules.",
+  "Do not invent selectors. Use selector values exactly as provided in the tree.",
+  "Descriptions should be brief, concrete, and explain what is wrong in user-facing terms.",
+  "resolutionPrompt should be an imperative fix instruction for UI generation, focused on what to change.",
+  "Avoid generic advice like 'improve layout' unless you specify the affected element and the intended change.",
+  "Return a small, high-signal set of violations rather than an exhaustive list.",
+].join(" ");
+
+const usabilityOpenEndedSystemPrompt = [
+  "You are a sharp product designer critiquing a UI for substantive usability problems.",
+  "Inspect the screenshot first for issues in hierarchy, task flow, discoverability, clutter, ambiguous controls, weak state communication, layout imbalance, readability, and accessibility.",
+  "Use the accessibility tree only to map each issue to an exact selector from the provided nodes.",
+  "Report the clearest problems that would noticeably improve the product if fixed.",
+  "Do not report trivial polish or speculative issues that are not visible or strongly implied.",
+  "If multiple symptoms are caused by one larger problem, prefer the higher-level issue.",
   "Use selector values exactly as provided in the tree.",
-  "Keep descriptions short and concrete.",
-  "For each issue, add a brief fix prompt suitable for UI generation.",
-  "The fix prompt should state what to change for that element, not explain why.",
+  "Descriptions should be brief, specific, and insight-driven, explaining the actual usability failure.",
+  "resolutionPrompt should be a direct instruction to modify the UI so the issue is resolved.",
+  "For ruleId, use the closest matching passed-in rule id when possible; if no rule meaningfully fits, use 'general-usability'.",
+  "Return a concise, high-value set of violations, not a long checklist.",
 ].join(" ");
 
 export class ClientAIProvider implements AIProvider {
@@ -150,11 +170,13 @@ export class ClientAIProvider implements AIProvider {
     const rules = rulesSpec.rules
       .map((r, i) => `**${i + 1}. ${r.title}**\n${r.description}\n`)
       .join("\n");
-    const snapshot = JSON.stringify(input.snapshot);
+    const html = input.markupContext?.html ?? "";
+    const styles = JSON.stringify(input.markupContext?.styles ?? [], null, 2);
     const data = recordToShapeJSON(input.data);
     const systemPrompt = loadPrompt(markupPromptSystem, { rules });
     const promptUser = loadPrompt(markupPromptUser, {
-      snapshot: snapshot,
+      html,
+      styles,
       data,
       prompt: input.prompt,
     });
@@ -174,6 +196,15 @@ export class ClientAIProvider implements AIProvider {
               type: "text",
               text: promptUser,
             },
+            // ...(input.screenshot
+            //   ? [
+            //       {
+            //         type: "image" as const,
+            //         image: input.screenshot,
+            //         mediaType: "image/jpeg",
+            //       },
+            //     ]
+            //   : []),
           ],
         },
       ],
@@ -196,15 +227,15 @@ export class ClientAIProvider implements AIProvider {
   async detectUsabilityIssues(
     input: UsabilityDetectionRequest,
   ): Promise<UsabilityViolation[]> {
-    const prompt = input.useRules
-      ? [
-          "Apply these rules when identifying issues. Prefer enabled rules first; only include disabled rules if the issue is obvious.",
-          "Rules:",
-          JSON.stringify(input.rules),
-          "Accessibility tree:",
-          JSON.stringify(input.snapshot.tree),
-        ].join("\n\n")
-      : "Highlight any clear usability issues you find.";
+    const prompt = [
+      input.useRules
+        ? "Audit the UI against the supplied rule set. Prefer enabled rules first; only use disabled rules if the issue is clearly still valid."
+        : "Identify the most important usability issues you can clearly infer from this UI, even if they are not directly dictated by the supplied rules.",
+      "Rules:",
+      JSON.stringify(input.rules),
+      "Accessibility tree:",
+      JSON.stringify(input.snapshot.tree),
+    ].join("\n\n");
 
     const result = await generateText({
       model: this.openai("gpt-5.4-mini"),
@@ -217,7 +248,9 @@ export class ClientAIProvider implements AIProvider {
       output: Output.object({
         schema: usabilityViolationsSchema,
       }),
-      system: usabilityDetectionSystemPrompt,
+      system: input.useRules
+        ? usabilityRuleAuditSystemPrompt
+        : usabilityOpenEndedSystemPrompt,
       messages: [
         {
           role: "user",

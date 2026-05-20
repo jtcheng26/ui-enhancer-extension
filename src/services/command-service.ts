@@ -2,12 +2,14 @@ import type {
   AugmentationRequest,
   ExtensionRuntimeMessage,
   SelectedElement,
+  UsabilityDetectionContext,
   UsabilityViolation,
 } from "../types";
 import { requestStore } from "../storage/request-store";
 import { settingsStore } from "../storage/settings-store";
 import { logger } from "../utils/logger";
 import {
+  inspectSelectedMarkupContext,
   inspectSelectedDomTree,
   resolveSelectedElement,
   screenshotElement,
@@ -72,6 +74,9 @@ export async function createUiSpec(
   options: CreateUiSpecOptions,
 ): Promise<string | null> {
   const snapshot = inspectSelectedDomTree(options.selectedElement ?? null);
+  const markupContext = inspectSelectedMarkupContext(
+    options.selectedElement ?? null,
+  );
 
   if (!snapshot) {
     logger.warn(
@@ -86,6 +91,7 @@ export async function createUiSpec(
       prompt: prompt.trim(),
       source,
       snapshot,
+      markupContext: markupContext ?? undefined,
       data: options.data,
       screenshot,
       strategy: options.strategy,
@@ -102,6 +108,7 @@ export async function createUiSpec(
 export async function detectUsabilityIssues(
   source: AugmentationRequest["source"],
   useRules: boolean,
+  context?: UsabilityDetectionContext,
 ): Promise<UsabilityViolation[]> {
   const res = await browser.runtime.sendMessage({
     type: "command/detect-usability",
@@ -109,6 +116,8 @@ export async function detectUsabilityIssues(
       source,
       useRules,
       rules: rulesSpec.rules,
+      snapshot: context?.snapshot,
+      screenshot: context?.screenshot,
     },
   } satisfies ExtensionRuntimeMessage);
 
@@ -122,6 +131,19 @@ export async function detectUsabilityIssues(
   }
 
   return res.data ?? [];
+}
+
+export async function getUsabilityDetectionContext() {
+  const res = await browser.runtime.sendMessage({
+    type: "command/get-usability-context",
+  } satisfies ExtensionRuntimeMessage);
+
+  if (!res?.data) {
+    logger.error("Failed to get usability detection context.", res?.error);
+    return null;
+  }
+
+  return res.data as UsabilityDetectionContext;
 }
 
 export async function showUsabilityViolations(

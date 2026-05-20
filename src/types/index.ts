@@ -47,6 +47,18 @@ export interface SelectedDomTreeSnapshot {
   prompt: string;
 }
 
+export interface MarkupStyleSnapshot {
+  selector: string;
+  tagName: string;
+  styles: Record<string, string>;
+}
+
+export interface SelectedMarkupContext {
+  selector: string;
+  html: string;
+  styles: MarkupStyleSnapshot[];
+}
+
 export interface AugmentationRequest {
   id: string;
   prompt: string;
@@ -60,6 +72,7 @@ export interface CreateUiCommandPayload {
   prompt: string;
   source: AugmentationRequest["source"];
   snapshot: SelectedDomTreeSnapshot;
+  markupContext?: SelectedMarkupContext;
   screenshot: string;
   strategy: RenderSystemId;
   data: Record<string, ExtractedValue>;
@@ -79,6 +92,14 @@ export interface UsabilityViolation {
   resolutionPrompt: string;
 }
 
+export interface UsabilityGenerationTask {
+  id: string;
+  rootViolation: UsabilityViolation;
+  violations: UsabilityViolation[];
+  selectedElement: SelectedElement;
+  prompt: string;
+}
+
 export interface UsabilityDetectionContext {
   snapshot: SelectedDomTreeSnapshot;
   screenshot: string;
@@ -88,6 +109,8 @@ export interface DetectUsabilityCommandPayload {
   source: AugmentationRequest["source"];
   useRules: boolean;
   rules: UsabilityRule[];
+  snapshot?: SelectedDomTreeSnapshot;
+  screenshot?: string;
 }
 
 export interface DomQueryPayload {
@@ -187,6 +210,9 @@ export type ExtensionRuntimeMessage =
   | {
       type: "command/submit";
       payload: AugmentationRequest;
+    }
+  | {
+      type: "command/get-usability-context";
     }
   | {
       type: "command/detect-usability";

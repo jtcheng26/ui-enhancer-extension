@@ -8,9 +8,11 @@ import {
   clearUsabilityViolations as clearUsabilityViolationHighlights,
   createUiSpec,
   detectUsabilityIssues,
+  getUsabilityDetectionContext,
   showUsabilityViolations as showUsabilityViolationHighlights,
   submitAugmentationRequest,
 } from "../../services/command-service";
+import exampleViolationsSpec from "../../ai/prompts/example_violations.json";
 import Example from "../../schema/dom-extraction-example.json";
 // import Example from "@/schema/action.json";
 // import Example from "../../schema/example.json";
@@ -21,6 +23,7 @@ import type {
   PersistedAugmentation,
   SchemaDiscoveryResult,
   SelectedElement,
+  UsabilityGenerationTask,
   UsabilityViolation,
 } from "../../types";
 import type {
@@ -29,6 +32,7 @@ import type {
 } from "@/services/dom-extractor";
 import { validateAndParse } from "@/services/dom-extractor";
 import { useAugmentationEngine } from "@/content/use-augmentation-engine";
+import { mapElementToSelectedElement } from "@/content/selection-state";
 import { logger } from "@/utils/logger";
 import {
   resolveSelectedElement,
@@ -40,11 +44,16 @@ import { RENDER_SYSTEMS, RenderSystemId } from "@/services/renderer/renderer";
 interface CommandPanelProps {
   surface: "popup" | "sidepanel";
   onLoadingStateChange?: (enabled: boolean) => void;
+  runWithUiHidden?: <T>(task: () => Promise<T>) => Promise<T>;
   mode?: "standalone" | "floating";
   previewVariant?: "full" | "prompt";
   pendingAugmentationId?: string | null;
   selectedElement?: SelectedElement | null;
   onPendingAugmentationChange?: (id: string | null) => void;
+  usabilityGenerationQueue?: UsabilityGenerationTask[];
+  activeUsabilityGenerationTaskId?: string | null;
+  onUsabilityGenerationQueueChange?: (tasks: UsabilityGenerationTask[]) => void;
+  onActiveUsabilityGenerationTaskIdChange?: (id: string | null) => void;
   onRequestClose?: () => void;
   onPreviewModeChange?: (enabled: boolean) => void;
 }
@@ -91,14 +100,32 @@ const STRATEGY_OPTIONS: {
   },
 ];
 
+const USE_EXAMPLE_VIOLATIONS_FOR_ACKNOWLEDGEMENT = false;
+
+function isAncestorSelector(ancestor: string, descendant: string) {
+  return (
+    ancestor !== descendant &&
+    descendant.startsWith(`${ancestor} > `)
+  );
+}
+
+function getSelectorDepth(selector: string) {
+  return selector.split(" > ").length;
+}
+
 export function CommandPanel({
   surface,
   onLoadingStateChange,
+  runWithUiHidden,
   mode = "standalone",
   previewVariant = "full",
   pendingAugmentationId: externalPendingAugmentationId = null,
   selectedElement = null,
   onPendingAugmentationChange,
+  usabilityGenerationQueue: externalUsabilityGenerationQueue,
+  activeUsabilityGenerationTaskId: externalActiveUsabilityGenerationTaskId,
+  onUsabilityGenerationQueueChange,
+  onActiveUsabilityGenerationTaskIdChange,
   onRequestClose,
   onPreviewModeChange,
 }: CommandPanelProps) {
@@ -111,6 +138,8 @@ export function CommandPanel({
     null,
   );
   const [isDetectingUsability, setIsDetectingUsability] = useState(false);
+  const [isCapturingUsabilityContext, setIsCapturingUsabilityContext] =
+    useState(false);
   const [usabilityReview, setUsabilityReview] =
     useState<UsabilityReviewState | null>(null);
   const [usabilityStatusMessage, setUsabilityStatusMessage] = useState<
@@ -122,16 +151,41 @@ export function CommandPanel({
     useUsabilityRules: true,
   });
   const [settingsOpen, setSettingsOpen] = useState(true);
+  const [internalUsabilityGenerationQueue, setInternalUsabilityGenerationQueue] =
+    useState<UsabilityGenerationTask[]>([]);
+  const [
+    internalActiveUsabilityGenerationTaskId,
+    setInternalActiveUsabilityGenerationTaskId,
+  ] = useState<string | null>(null);
   const submissionVersionRef = useRef(0);
 
   const isPopup = surface === "popup";
   const isFloating = mode === "floating";
   const augmentationEngine = useAugmentationEngine();
   const pendingAugmentationId = externalPendingAugmentationId;
+  const usabilityGenerationQueue =
+    externalUsabilityGenerationQueue ?? internalUsabilityGenerationQueue;
+  const activeUsabilityGenerationTaskId =
+    externalActiveUsabilityGenerationTaskId ??
+    internalActiveUsabilityGenerationTaskId;
   const isPreviewMode = Boolean(pendingAugmentationId);
 
   function updatePendingAugmentationId(id: string | null) {
     onPendingAugmentationChange?.(id);
+  }
+
+  function updateUsabilityGenerationQueue(tasks: UsabilityGenerationTask[]) {
+    onUsabilityGenerationQueueChange?.(tasks);
+    if (!onUsabilityGenerationQueueChange) {
+      setInternalUsabilityGenerationQueue(tasks);
+    }
+  }
+
+  function updateActiveUsabilityGenerationTaskId(id: string | null) {
+    onActiveUsabilityGenerationTaskIdChange?.(id);
+    if (!onActiveUsabilityGenerationTaskIdChange) {
+      setInternalActiveUsabilityGenerationTaskId(id);
+    }
   }
 
   async function refreshPersistedAugmentations() {
@@ -157,8 +211,16 @@ export function CommandPanel({
   }, [isPreviewMode, onPreviewModeChange]);
 
   useEffect(() => {
-    onLoadingStateChange?.(isBusy);
-  }, [isBusy, onLoadingStateChange]);
+    onLoadingStateChange?.(
+      generationStep !== null ||
+        (isDetectingUsability && !isCapturingUsabilityContext),
+    );
+  }, [
+    generationStep,
+    isCapturingUsabilityContext,
+    isDetectingUsability,
+    onLoadingStateChange,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -179,6 +241,95 @@ export function CommandPanel({
     };
   }, [augmentationEngine, pendingAugmentationId]);
 
+  async function runGenerationPipeline(
+    requestPrompt: string,
+    requestSelectedElement: SelectedElement | null,
+  ) {
+    if (!requestPrompt.trim()) {
+      return false;
+    }
+
+    let screenshot = "";
+
+    if (requestSelectedElement) {
+      const selectedDomElement = resolveSelectedElement(requestSelectedElement);
+
+      if (selectedDomElement) {
+        const floatingPopupHost = document.querySelector("ai-ui-floating-popup");
+        screenshot = floatingPopupHost
+          ? await withElementHidden(floatingPopupHost, () =>
+              screenshotElement(selectedDomElement),
+            )
+          : await screenshotElement(selectedDomElement);
+      }
+    }
+
+    const submissionVersion = submissionVersionRef.current + 1;
+    submissionVersionRef.current = submissionVersion;
+    setGenerationStep({ phase: "extractor" });
+
+    try {
+      const extractor = await submitAugmentationRequest(requestPrompt, surface, {
+        selectedElement: requestSelectedElement,
+      });
+
+      if (submissionVersion !== submissionVersionRef.current) {
+        return false;
+      }
+
+      if (!extractor) {
+        return false;
+      }
+
+      const parsed = validateAndParse(extractor);
+
+      if (!parsed.data) {
+        logger.warn(
+          "Skipping UI spec generation because extractor parsing failed.",
+          {
+            errors: parsed.errors,
+          },
+        );
+        return false;
+      }
+
+      setGenerationStep({ phase: "ui", data: parsed.data });
+      const uiSpecString = await createUiSpec(requestPrompt, surface, screenshot, {
+        selectedElement: requestSelectedElement,
+        data: parsed.data,
+        strategy: requestSettings.strategy,
+      });
+
+      if (submissionVersion !== submissionVersionRef.current) {
+        return false;
+      }
+
+      logger.info("Generated UI spec.", uiSpecString);
+
+      if (!uiSpecString || !augmentationEngine) {
+        return false;
+      }
+
+      const injectedAugmentation = await augmentationEngine.inject(
+        extractor,
+        uiSpecString,
+        requestSettings.strategy,
+      );
+
+      if (submissionVersion !== submissionVersionRef.current) {
+        return false;
+      }
+
+      updatePendingAugmentationId(injectedAugmentation?.id ?? null);
+      void disableSelectionModeIfEnabled();
+      return Boolean(injectedAugmentation?.id);
+    } finally {
+      if (submissionVersion === submissionVersionRef.current) {
+        setGenerationStep(null);
+      }
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -187,98 +338,121 @@ export function CommandPanel({
     }
 
     await clearUsabilityReview();
-
-    // const popupShadowRoot = document.querySelector(
-    //   "ai-ui-floating-popup",
-    // )?.shadowRoot;
-
-    // const popup = popupShadowRoot?.getElementById("aui-popup") as HTMLElement;
-    // const screenshot = await withElementHidden(popup, () =>
-    //   screenshotElement(
-    //     resolveSelectedElement(selectedElement as SelectedElement) as Element,
-    //   ),
-    // );
-
-    const screenshot = "";
-
-    const submissionVersion = submissionVersionRef.current + 1;
-    submissionVersionRef.current = submissionVersion;
-    setGenerationStep({ phase: "extractor" });
-    try {
-      // const extractor = Example as DOMExtractorSpec;
-
-      const extractor = await submitAugmentationRequest(prompt, surface, {
-        selectedElement,
-      });
-
-      if (submissionVersion !== submissionVersionRef.current) {
-        return;
-      }
-
-      if (extractor) {
-        const parsed = validateAndParse(extractor);
-
-        console.log("Parsed data.", parsed);
-
-        if (parsed.data) {
-          setGenerationStep({ phase: "ui", data: parsed.data });
-          const uiSpecString = await createUiSpec(prompt, surface, screenshot, {
-            selectedElement,
-            data: parsed.data,
-            strategy: requestSettings.strategy,
-          });
-
-          // const uiSpecString = "a";
-
-          if (submissionVersion !== submissionVersionRef.current) {
-            return;
-          }
-
-          logger.info("Generated UI spec.", uiSpecString);
-
-          if (uiSpecString && augmentationEngine) {
-            const injectedAugmentation = await augmentationEngine.inject(
-              extractor,
-              uiSpecString,
-              requestSettings.strategy,
-            );
-
-            if (submissionVersion !== submissionVersionRef.current) {
-              return;
-            }
-
-            updatePendingAugmentationId(injectedAugmentation?.id ?? null);
-            void handleSettingsToggle("selectionModeEnabled");
-          }
-        } else {
-          logger.warn(
-            "Skipping UI spec generation because extractor parsing failed.",
-            {
-              errors: parsed.errors,
-            },
-          );
-        }
-      }
-    } finally {
-      if (submissionVersion === submissionVersionRef.current) {
-        setGenerationStep(null);
-      }
-    }
+    await runGenerationPipeline(prompt, selectedElement);
   }
 
   function handleCancelLoading() {
     submissionVersionRef.current += 1;
     setGenerationStep(null);
+    updateUsabilityGenerationQueue([]);
+    updateActiveUsabilityGenerationTaskId(null);
   }
 
   async function acknowledgeDetectedViolations(
-    _violations: UsabilityViolation[],
-  ) {}
+    violations: UsabilityViolation[],
+  ) {
+    const queuedTasks = buildUsabilityGenerationTasks(
+      getViolationsForAcknowledgement(violations),
+    );
+
+    updateUsabilityGenerationQueue(queuedTasks);
+    updateActiveUsabilityGenerationTaskId(null);
+
+    if (queuedTasks.length === 0) {
+      setUsabilityStatusMessage(
+        "No matching page sections were found for the selected usability issues.",
+      );
+    }
+  }
 
   async function clearUsabilityReview() {
     setUsabilityReview(null);
     setUsabilityStatusMessage(null);
     await clearUsabilityViolationHighlights();
+  }
+
+  function getViolationsForAcknowledgement(
+    detectedViolations: UsabilityViolation[],
+  ) {
+    return USE_EXAMPLE_VIOLATIONS_FOR_ACKNOWLEDGEMENT
+      ? (exampleViolationsSpec.violations as UsabilityViolation[])
+      : detectedViolations;
+  }
+
+  async function getViolationsForReview() {
+    if (USE_EXAMPLE_VIOLATIONS_FOR_ACKNOWLEDGEMENT) {
+      return exampleViolationsSpec.violations as UsabilityViolation[];
+    }
+
+    return detectUsabilityIssues(surface, requestSettings.useUsabilityRules);
+  }
+
+  function buildUsabilityGenerationPrompt(violations: UsabilityViolation[]) {
+    return [
+      "Update the selected section to resolve these usability issues:",
+      ...violations.map(
+        (violation, index) => `${index + 1}. ${violation.resolutionPrompt}`,
+      ),
+    ].join("\n");
+  }
+
+  function buildUsabilityGenerationTasks(
+    violations: UsabilityViolation[],
+  ): UsabilityGenerationTask[] {
+    const sortedViolations = [...violations].sort(
+      (a, b) => getSelectorDepth(a.selector) - getSelectorDepth(b.selector),
+    );
+    const rootViolations = sortedViolations.filter(
+      (candidate) =>
+        !sortedViolations.some((other) =>
+          isAncestorSelector(other.selector, candidate.selector),
+        ),
+    );
+
+    return rootViolations.flatMap((rootViolation) => {
+      const groupedViolations = sortedViolations.filter(
+        (candidate) =>
+          candidate.selector === rootViolation.selector ||
+          isAncestorSelector(rootViolation.selector, candidate.selector),
+      );
+
+      let element: HTMLElement | null = null;
+
+      try {
+        element = document.querySelector<HTMLElement>(rootViolation.selector);
+      } catch {
+        element = null;
+      }
+
+      if (!element) {
+        logger.warn("Skipping usability generation task because selector did not resolve.", {
+          selector: rootViolation.selector,
+        });
+        return [];
+      }
+
+      return [
+        {
+          id: crypto.randomUUID(),
+          rootViolation,
+          violations: groupedViolations,
+          selectedElement: mapElementToSelectedElement(element),
+          prompt: buildUsabilityGenerationPrompt(groupedViolations),
+        },
+      ];
+    });
+  }
+
+  function completeActiveUsabilityGenerationTask() {
+    if (!activeUsabilityGenerationTaskId) {
+      return;
+    }
+
+    const nextQueue = usabilityGenerationQueue.filter(
+      (task) => task.id !== activeUsabilityGenerationTaskId,
+    );
+    updateUsabilityGenerationQueue(nextQueue);
+    updateActiveUsabilityGenerationTaskId(null);
   }
 
   async function showDetectedViolations(
@@ -303,10 +477,29 @@ export function CommandPanel({
     await clearUsabilityReview();
 
     try {
-      const violations = await detectUsabilityIssues(
-        surface,
-        requestSettings.useUsabilityRules,
-      );
+      const violations = USE_EXAMPLE_VIOLATIONS_FOR_ACKNOWLEDGEMENT
+        ? await getViolationsForReview()
+        : await (async () => {
+            let context = null;
+
+            if (runWithUiHidden) {
+              setIsCapturingUsabilityContext(true);
+
+              try {
+                context = await runWithUiHidden(() =>
+                  getUsabilityDetectionContext(),
+                );
+              } finally {
+                setIsCapturingUsabilityContext(false);
+              }
+            }
+
+            return detectUsabilityIssues(
+              surface,
+              requestSettings.useUsabilityRules,
+              context ?? undefined,
+            );
+          })();
 
       if (violations.length === 0) {
         setUsabilityStatusMessage(
@@ -317,6 +510,7 @@ export function CommandPanel({
 
       await showDetectedViolations(violations, options);
     } finally {
+      setIsCapturingUsabilityContext(false);
       setIsDetectingUsability(false);
     }
   }
@@ -328,7 +522,6 @@ export function CommandPanel({
 
     await acknowledgeDetectedViolations(usabilityReview.violations);
     await clearUsabilityReview();
-    setUsabilityStatusMessage("Issues acknowledged.");
   }
 
   async function handleCancelUsabilityIssues() {
@@ -341,6 +534,7 @@ export function CommandPanel({
     await augmentationEngine.persistAugmentation(pendingAugmentationId);
     await refreshPersistedAugmentations();
     updatePendingAugmentationId(null);
+    completeActiveUsabilityGenerationTask();
   }
 
   async function handleDeletePreviewAugmentation() {
@@ -348,6 +542,7 @@ export function CommandPanel({
 
     augmentationEngine.remove(pendingAugmentationId);
     updatePendingAugmentationId(null);
+    completeActiveUsabilityGenerationTask();
   }
 
   async function handlePersistedToggle(augmentation: PersistedAugmentation) {
@@ -383,6 +578,62 @@ export function CommandPanel({
     const nextSettings = await settingsStore.patch({ [key]: !settings[key] });
     setSettings(nextSettings);
   }
+
+  async function disableSelectionModeIfEnabled() {
+    if (!settings?.selectionModeEnabled) {
+      return;
+    }
+
+    const nextSettings = await settingsStore.patch({
+      selectionModeEnabled: false,
+    });
+    setSettings(nextSettings);
+  }
+
+  useEffect(() => {
+    if (previewVariant !== "full") {
+      return;
+    }
+
+    if (
+      pendingAugmentationId ||
+      generationStep ||
+      isDetectingUsability ||
+      activeUsabilityGenerationTaskId ||
+      usabilityGenerationQueue.length === 0
+    ) {
+      return;
+    }
+
+    const nextTask = usabilityGenerationQueue[0];
+
+    updateActiveUsabilityGenerationTaskId(nextTask.id);
+
+    void (async () => {
+      const generated = await runGenerationPipeline(
+        nextTask.prompt,
+        nextTask.selectedElement,
+      );
+
+      if (!generated) {
+        const nextQueue = usabilityGenerationQueue.filter(
+          (task) => task.id !== nextTask.id,
+        );
+        updateUsabilityGenerationQueue(nextQueue);
+        updateActiveUsabilityGenerationTaskId(null);
+        setUsabilityStatusMessage(
+          `Skipped a usability update for ${nextTask.rootViolation.selector}.`,
+        );
+      }
+    })();
+  }, [
+    activeUsabilityGenerationTaskId,
+    generationStep,
+    isDetectingUsability,
+    pendingAugmentationId,
+    previewVariant,
+    usabilityGenerationQueue,
+  ]);
 
   const shellClassName = isPopup
     ? "min-h-screen w-full min-w-[320px]"

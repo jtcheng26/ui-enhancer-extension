@@ -4,7 +4,10 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-import type { SelectedElement } from "../types";
+import type {
+  SelectedElement,
+  UsabilityGenerationTask,
+} from "../types";
 import { PopupApp } from "../popup/PopupApp";
 
 interface FloatingWindowProps {
@@ -23,12 +26,18 @@ export function FloatingWindow({
   onClose,
 }: FloatingWindowProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [isUiHiddenForCapture, setIsUiHiddenForCapture] = useState(false);
   const [position, setPosition] = useState(DEFAULT_POSITION);
   const [size, setSize] = useState(DEFAULT_SIZE);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [pendingAugmentationId, setPendingAugmentationId] = useState<
     string | null
   >(null);
+  const [usabilityGenerationQueue, setUsabilityGenerationQueue] = useState<
+    UsabilityGenerationTask[]
+  >([]);
+  const [activeUsabilityGenerationTaskId, setActiveUsabilityGenerationTaskId] =
+    useState<string | null>(null);
 
   const dragOffsetRef = useRef({ x: 0, y: 0 });
   const resizeRef = useRef<{
@@ -127,19 +136,50 @@ export function FloatingWindow({
     };
   }
 
+  async function waitForUiPaint(delayMs = 180) {
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    );
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  async function runWithUiHidden<T>(task: () => Promise<T>) {
+    setIsUiHiddenForCapture(true);
+    await waitForUiPaint();
+
+    try {
+      return await task();
+    } finally {
+      setIsUiHiddenForCapture(false);
+      await waitForUiPaint(0);
+    }
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   if (pendingAugmentationId) {
     return (
-      <div className="fixed bottom-6 left-1/2 z-[2147483647] -translate-x-1/2">
+      <div
+        className="fixed bottom-6 left-1/2 z-[2147483647] -translate-x-1/2"
+        style={{ display: isUiHiddenForCapture ? "none" : undefined }}
+      >
         <div className="w-[min(380px,calc(100vw-24px))] rounded-[26px] bg-slate-900/20 p-[6px] backdrop-blur-md shadow-[0_24px_60px_rgba(15,23,42,0.28)]">
           <div className="relative overflow-hidden rounded-[22px] bg-slate-800">
             <PopupApp
               mode="floating"
               onLoadingStateChange={setIsLoading}
+              runWithUiHidden={runWithUiHidden}
               pendingAugmentationId={pendingAugmentationId}
               previewVariant="prompt"
               onPendingAugmentationChange={setPendingAugmentationId}
+              usabilityGenerationQueue={usabilityGenerationQueue}
+              activeUsabilityGenerationTaskId={
+                activeUsabilityGenerationTaskId
+              }
+              onUsabilityGenerationQueueChange={setUsabilityGenerationQueue}
+              onActiveUsabilityGenerationTaskIdChange={
+                setActiveUsabilityGenerationTaskId
+              }
               selectedElement={selectedElement}
               onPreviewModeChange={setIsPreviewMode}
               onRequestClose={onClose}
@@ -151,7 +191,7 @@ export function FloatingWindow({
   }
 
   return (
-    <>
+    <div style={{ display: isUiHiddenForCapture ? "none" : undefined }}>
       {isLoading ? (
         <div className="fixed inset-0 z-[2147483645] bg-white/18 backdrop-blur-md" />
       ) : null}
@@ -191,9 +231,18 @@ export function FloatingWindow({
               <PopupApp
                 mode="floating"
                 onLoadingStateChange={setIsLoading}
+                runWithUiHidden={runWithUiHidden}
                 pendingAugmentationId={pendingAugmentationId}
                 previewVariant="full"
                 onPendingAugmentationChange={setPendingAugmentationId}
+                usabilityGenerationQueue={usabilityGenerationQueue}
+                activeUsabilityGenerationTaskId={
+                  activeUsabilityGenerationTaskId
+                }
+                onUsabilityGenerationQueueChange={setUsabilityGenerationQueue}
+                onActiveUsabilityGenerationTaskIdChange={
+                  setActiveUsabilityGenerationTaskId
+                }
                 selectedElement={selectedElement}
                 onPreviewModeChange={setIsPreviewMode}
                 onRequestClose={onClose}
@@ -221,6 +270,6 @@ export function FloatingWindow({
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
