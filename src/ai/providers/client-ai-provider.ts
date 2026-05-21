@@ -1,4 +1,9 @@
-import { AugmentationRequest, UsabilityViolation } from "@/types";
+import {
+  AugmentationRequest,
+  UiGenerationAgentCommandPayload,
+  UiGenerationAgentResponse,
+  UsabilityViolation,
+} from "@/types";
 import {
   AIProvider,
   UIRequest,
@@ -10,9 +15,18 @@ import {
   InputValue,
   LLMSimpleDOMExtractorSpecSchema,
   ExtractedValue,
+  SimpleFieldSchema,
 } from "../../services/dom-extractor";
 import { z } from "zod";
-import { generateText, Output, streamText } from "ai";
+import {
+  generateText,
+  Output,
+  streamText,
+  stepCountIs,
+  tool,
+  ToolLoopAgent,
+  type ModelMessage,
+} from "ai";
 import { createOpenAI, OpenAIProvider } from "@ai-sdk/openai";
 
 import extractorPromptSystem from "../prompts/generate-extractor-system.txt?raw";
@@ -20,6 +34,7 @@ import extractorPromptUser from "../prompts/generate-extractor-user.txt?raw";
 import uiPromptUser from "../prompts/generate-ui-user.txt?raw";
 import markupPromptSystem from "../prompts/markup-system.txt?raw";
 import markupPromptUser from "../prompts/markup-user.txt?raw";
+import agentPromptSystem from "../prompts/agent-system.txt?raw";
 import { jsonRenderSystemPrompt } from "../ui/prompt";
 import ExampleMarkup from "@/schema/markup.txt?raw";
 
@@ -42,6 +57,7 @@ type Shape =
 const MAX_PROMPT_STRING_LENGTH = 240;
 const MAX_PROMPT_ARRAY_ITEMS = 8;
 const MAX_PROMPT_OBJECT_KEYS = 24;
+const MAX_AGENT_DRAFT_RENDERS = 3;
 
 function clipPromptString(value: string): string {
   return value.length <= MAX_PROMPT_STRING_LENGTH
@@ -138,6 +154,364 @@ const usabilityViolationsSchema = z.object({
   ),
 });
 
+const agentViolationSchema = z.object({
+  ruleId: z.string().optional(),
+  selector: z.string().min(1),
+  description: z.string().min(1).max(180),
+  resolutionPrompt: z.string().min(1).max(260),
+});
+
+const agentReportViolationsInputSchema = z.object({
+  violations: z.array(agentViolationSchema).max(8),
+});
+
+const agentCreateExtractorInputSchema = z.object({
+  rootSelector: z
+    .string()
+    .min(1)
+    .describe("CSS selector for the root subtree to replace."),
+  fields: z.record(z.string(), SimpleFieldSchema),
+});
+
+const agentInjectUiInputSchema = z.object({
+  rootSelector: z
+    .string()
+    .min(1)
+    .describe("CSS selector for the root subtree this HTML will replace."),
+  html: z
+    .string()
+    .min(1)
+    .describe("Single HTML fragment using Tailwind classes and data slots."),
+});
+
+const agentRenderUiDraftInputSchema = z.object({
+  rootSelector: z
+    .string()
+    .min(1)
+    .describe("CSS selector for the root subtree this HTML will replace."),
+  html: z
+    .string()
+    .min(1)
+    .describe(
+      "Draft HTML fragment to render and screenshot before final injection.",
+    ),
+  notes: z
+    .string()
+    .max(400)
+    .optional()
+    .describe("Optional notes about what the draft is trying to improve."),
+});
+
+type AgentReportViolationsInput = z.infer<
+  typeof agentReportViolationsInputSchema
+>;
+
+type AgentCreateExtractorInput = z.infer<
+  typeof agentCreateExtractorInputSchema
+>;
+
+type AgentToolName =
+  | "reportViolations"
+  | "createExtractor"
+  | "renderUiDraft"
+  | "injectUi";
+
+type AgentToolStage =
+  | "audit"
+  | "extractor"
+  | "extractorOrDraft"
+  | "draft"
+  | "draftOrFinal"
+  | "final"
+  | "free";
+
+function toJsonValue(value: unknown) {
+  return JSON.parse(JSON.stringify(value)) as any;
+}
+
+function normalizeAgentViolations(
+  input: AgentReportViolationsInput,
+): UsabilityViolation[] {
+  return input.violations.map((violation) => ({
+    ruleId: violation.ruleId ?? "agent-review",
+    selector: violation.selector,
+    description: violation.description,
+    resolutionPrompt: violation.resolutionPrompt,
+  }));
+}
+
+function createAgentUserMessage(
+  input: UiGenerationAgentCommandPayload,
+): ModelMessage {
+  const text = [
+    "User request:",
+    input.prompt.trim(),
+    "",
+    "Current page DOM snapshot:",
+    input.snapshot?.prompt ?? "(No DOM snapshot was available.)",
+    "",
+    "Use the screenshot as the visual source of truth. Use selectors from the DOM snapshot when reporting violations and choosing replacement roots.",
+  ].join("\n");
+
+  return {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text,
+      },
+      ...(input.screenshot
+        ? [
+            {
+              type: "image" as const,
+              image: input.screenshot,
+              mediaType: "image/jpeg",
+            },
+          ]
+        : []),
+    ],
+  };
+}
+
+function getMessageParts(message: ModelMessage): any[] {
+  return Array.isArray(message.content) ? (message.content as any[]) : [];
+}
+
+function getLastToolCallInput<T>(
+  messages: ModelMessage[],
+  toolName: string,
+  schema: z.ZodType<T>,
+): T | null {
+  for (const message of [...messages].reverse()) {
+    for (const part of [...getMessageParts(message)].reverse()) {
+      if (part?.type !== "tool-call" || part.toolName !== toolName) {
+        continue;
+      }
+
+      const parsed = schema.safeParse(part.input);
+      if (parsed.success) {
+        return parsed.data;
+      }
+    }
+  }
+
+  return null;
+}
+
+function countToolCalls(messages: ModelMessage[] | undefined, toolName: string) {
+  return (messages ?? []).reduce((count, message) => {
+    return (
+      count +
+      getMessageParts(message).filter(
+        (part) => part?.type === "tool-call" && part.toolName === toolName,
+      ).length
+    );
+  }, 0);
+}
+
+function extractorFromAgentInput(input: AgentCreateExtractorInput) {
+  return {
+    root: {
+      selector: input.rootSelector,
+      output: "SelectedSection",
+    },
+    fields: input.fields,
+  };
+}
+
+function stripHtmlCodeFence(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^```(?:html)?\s*([\s\S]*?)\s*```$/i);
+  return match ? match[1].trim() : trimmed;
+}
+
+function createExtractorToolResultMessage(
+  result: UiGenerationAgentCommandPayload["extractorResult"],
+): ModelMessage | null {
+  if (!result) {
+    return null;
+  }
+
+  const output = result.valid
+    ? {
+        valid: true,
+        rootSelector: result.extractor.root.selector,
+        data: result.data
+          ? JSON.parse(recordToPromptJSON(result.data))
+          : undefined,
+        reference: {
+          dom: result.snapshot?.prompt,
+          html: result.markupContext?.html,
+          styles: result.markupContext?.styles,
+        },
+      }
+    : {
+        valid: false,
+        errors: result.errors ?? ["Extractor did not produce usable data."],
+      };
+
+  return {
+    role: "tool",
+    content: [
+      {
+        type: "tool-result",
+        toolCallId: result.toolCallId,
+        toolName: "createExtractor",
+        output: {
+          type: "json",
+          value: toJsonValue(output),
+        },
+      },
+    ],
+  };
+}
+
+function createExtractorReferenceMessage(
+  result: UiGenerationAgentCommandPayload["extractorResult"],
+): ModelMessage | null {
+  if (!result?.valid || !result.screenshot) {
+    return null;
+  }
+
+  return {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: "Reference screenshot for the replacement root selected by createExtractor.",
+      },
+      {
+        type: "image",
+        image: result.screenshot,
+        mediaType: "image/jpeg",
+      },
+    ],
+  };
+}
+
+function createDraftRenderToolResultMessage(
+  result: UiGenerationAgentCommandPayload["draftRenderResult"],
+  draftCount: number,
+): ModelMessage | null {
+  if (!result) {
+    return null;
+  }
+
+  return {
+    role: "tool",
+    content: [
+      {
+        type: "tool-result",
+        toolCallId: result.toolCallId,
+        toolName: "renderUiDraft",
+        output: {
+          type: "json",
+          value: toJsonValue({
+            success: result.success,
+            screenshotAvailable: Boolean(result.screenshot),
+            draftCount,
+            maxDrafts: MAX_AGENT_DRAFT_RENDERS,
+            error: result.error,
+          }),
+        },
+      },
+    ],
+  };
+}
+
+function createDraftRenderReferenceMessage(
+  result: UiGenerationAgentCommandPayload["draftRenderResult"],
+): ModelMessage | null {
+  if (!result?.success || !result.screenshot) {
+    return null;
+  }
+
+  return {
+    role: "user",
+    content: [
+      {
+        type: "text",
+        text: "Rendered screenshot of your draft replacement. If it looks good, call injectUi with this HTML. If you see visible design problems, revise the HTML and call renderUiDraft again. You may preview at most three drafts total.",
+      },
+      {
+        type: "image",
+        image: result.screenshot,
+        mediaType: "image/jpeg",
+      },
+    ],
+  };
+}
+
+function getAgentToolControls(input: UiGenerationAgentCommandPayload): {
+  stage: AgentToolStage;
+  activeTools?: AgentToolName[];
+  toolChoice?:
+    | "required"
+    | {
+        type: "tool";
+        toolName: AgentToolName;
+      };
+} {
+  if (!input.messages) {
+    return {
+      stage: "audit",
+      activeTools: ["reportViolations"],
+      toolChoice: {
+        type: "tool",
+        toolName: "reportViolations",
+      },
+    };
+  }
+
+  if (input.approval || input.extractorResult?.valid === false) {
+    return {
+      stage: "extractor",
+      activeTools: ["createExtractor"],
+      toolChoice: {
+        type: "tool",
+        toolName: "createExtractor",
+      },
+    };
+  }
+
+  if (input.draftRenderResult?.success === true) {
+    const draftCount = countToolCalls(input.messages, "renderUiDraft");
+
+    if (draftCount < MAX_AGENT_DRAFT_RENDERS) {
+      return {
+        stage: "draftOrFinal",
+        activeTools: ["renderUiDraft", "injectUi"],
+        toolChoice: "required",
+      };
+    }
+
+    return {
+      stage: "final",
+    };
+  }
+
+  if (input.draftRenderResult?.success === false) {
+    const draftCount = countToolCalls(input.messages, "renderUiDraft");
+
+    return {
+      stage: draftCount >= MAX_AGENT_DRAFT_RENDERS ? "final" : "draft",
+    };
+  }
+
+  if (input.extractorResult?.valid === true) {
+    return {
+      stage: "extractorOrDraft",
+      activeTools: ["createExtractor", "renderUiDraft"],
+      toolChoice: "required",
+    };
+  }
+
+  return {
+    stage: "free",
+    toolChoice: "required",
+  };
+}
+
 const usabilityRuleAuditSystemPrompt = [
   "You are a senior product designer reviewing a UI against a supplied usability rule set.",
   "Use the screenshot to judge visual hierarchy, spacing, affordance, emphasis, density, readability, and state clarity.",
@@ -171,6 +545,287 @@ export class ClientAIProvider implements AIProvider {
     this.openai = createOpenAI({
       apiKey,
     });
+  }
+
+  private createUiGenerationAgent(
+    options: ReturnType<typeof getAgentToolControls>,
+  ) {
+    return new ToolLoopAgent({
+      id: "ui-generation-agent",
+      model: this.openai("gpt-5.4-mini"),
+      instructions: agentPromptSystem,
+      providerOptions: {
+        openai: {
+          parallelToolCalls: false,
+          reasoningEffort: "low",
+        },
+      },
+      stopWhen: stepCountIs(15),
+      activeTools: options.activeTools,
+      toolChoice: options.toolChoice,
+      prepareStep: () => {
+        const toolName =
+          options.stage === "draft"
+            ? "renderUiDraft"
+            : options.stage === "final"
+              ? "injectUi"
+              : null;
+
+        if (!toolName) return undefined;
+
+        return {
+          activeTools: [toolName],
+          toolChoice: {
+            type: "tool",
+            toolName,
+          },
+        };
+      },
+      tools: {
+        reportViolations: tool({
+          description:
+            "Report the usability issues found in the current UI and pause for user approval.",
+          inputSchema: agentReportViolationsInputSchema,
+          needsApproval: true,
+          execute: async ({ violations }) => ({
+            approved: true,
+            count: violations.length,
+          }),
+        }),
+        createExtractor: tool({
+          description:
+            "Request live DOM data extraction for the selected replacement root. The browser extension will execute this tool and return extracted data or validation errors.",
+          inputSchema: agentCreateExtractorInputSchema,
+        }),
+        renderUiDraft: tool({
+          description:
+            "Submit draft replacement HTML for the browser extension to temporarily render and screenshot before final injection.",
+          inputSchema: agentRenderUiDraftInputSchema,
+        }),
+        injectUi: tool({
+          description:
+            "Submit the final replacement HTML fragment for injection into the browser page. Use the rendered draft screenshot to revise visible design issues before calling this.",
+          inputSchema: agentInjectUiInputSchema,
+        }),
+      },
+    });
+  }
+
+  async runUiGenerationAgent(
+    input: UiGenerationAgentCommandPayload,
+  ): Promise<UiGenerationAgentResponse> {
+    const messages: ModelMessage[] = input.messages
+      ? [...input.messages]
+      : [createAgentUserMessage(input)];
+
+    if (input.approval) {
+      messages.push({
+        role: "tool",
+        content: [
+          {
+            type: "tool-approval-response",
+            approvalId: input.approval.approvalId,
+            approved: input.approval.approved,
+            reason: input.approval.reason,
+          },
+        ],
+      });
+    }
+
+    const extractorToolResultMessage = createExtractorToolResultMessage(
+      input.extractorResult,
+    );
+    if (extractorToolResultMessage) {
+      messages.push(extractorToolResultMessage);
+    }
+
+    const extractorReferenceMessage = createExtractorReferenceMessage(
+      input.extractorResult,
+    );
+    if (extractorReferenceMessage) {
+      messages.push(extractorReferenceMessage);
+    }
+
+    const draftRenderToolResultMessage = createDraftRenderToolResultMessage(
+      input.draftRenderResult,
+      countToolCalls(input.messages, "renderUiDraft"),
+    );
+    if (draftRenderToolResultMessage) {
+      messages.push(draftRenderToolResultMessage);
+    }
+
+    const draftRenderReferenceMessage = createDraftRenderReferenceMessage(
+      input.draftRenderResult,
+    );
+    if (draftRenderReferenceMessage) {
+      messages.push(draftRenderReferenceMessage);
+    }
+
+    const result = await this.createUiGenerationAgent(
+      getAgentToolControls(input),
+    ).generate({
+      messages,
+    });
+
+    const nextMessages = [
+      ...messages,
+      ...(result.response.messages as ModelMessage[]),
+    ];
+    const content = result.content as any[];
+
+    const approvalRequest = content.find(
+      (part) =>
+        part?.type === "tool-approval-request" &&
+        part.toolCall?.toolName === "reportViolations",
+    );
+
+    if (approvalRequest) {
+      const parsed = agentReportViolationsInputSchema.safeParse(
+        approvalRequest.toolCall.input,
+      );
+      const violations = parsed.success
+        ? normalizeAgentViolations(parsed.data)
+        : [];
+
+      if (violations.length === 0) {
+        return {
+          status: "done",
+          messages: nextMessages,
+          text: "No clear usability issues were reported.",
+        };
+      }
+
+      return {
+        status: "needsApproval",
+        messages: nextMessages,
+        approvalId: approvalRequest.approvalId,
+        toolCallId: approvalRequest.toolCall.toolCallId,
+        violations,
+      };
+    }
+
+    const createExtractorCall = [...content]
+      .reverse()
+      .find(
+        (part) =>
+          part?.type === "tool-call" && part.toolName === "createExtractor",
+      );
+
+    if (createExtractorCall) {
+      const parsed = agentCreateExtractorInputSchema.safeParse(
+        createExtractorCall.input,
+      );
+
+      if (!parsed.success) {
+        return {
+          status: "error",
+          messages: nextMessages,
+          error: parsed.error.issues
+            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+            .join("\n"),
+        };
+      }
+
+      return {
+        status: "needsExtractorResult",
+        messages: nextMessages,
+        toolCallId: createExtractorCall.toolCallId,
+        extractor: extractorFromAgentInput(parsed.data),
+      };
+    }
+
+    const renderUiDraftCall = [...content]
+      .reverse()
+      .find(
+        (part) =>
+          part?.type === "tool-call" && part.toolName === "renderUiDraft",
+      );
+
+    if (renderUiDraftCall) {
+      const parsed = agentRenderUiDraftInputSchema.safeParse(
+        renderUiDraftCall.input,
+      );
+
+      if (!parsed.success) {
+        return {
+          status: "error",
+          messages: nextMessages,
+          error: parsed.error.issues
+            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+            .join("\n"),
+        };
+      }
+
+      const extractorInput = getLastToolCallInput(
+        nextMessages,
+        "createExtractor",
+        agentCreateExtractorInputSchema,
+      );
+
+      if (!extractorInput) {
+        return {
+          status: "error",
+          messages: nextMessages,
+          error: "The agent submitted a UI draft before creating an extractor.",
+        };
+      }
+
+      return {
+        status: "needsDraftRender",
+        messages: nextMessages,
+        toolCallId: renderUiDraftCall.toolCallId,
+        extractor: extractorFromAgentInput(extractorInput),
+        spec: stripHtmlCodeFence(parsed.data.html),
+      };
+    }
+
+    const injectUiCall = [...content]
+      .reverse()
+      .find(
+        (part) => part?.type === "tool-call" && part.toolName === "injectUi",
+      );
+
+    if (injectUiCall) {
+      const parsed = agentInjectUiInputSchema.safeParse(injectUiCall.input);
+
+      if (!parsed.success) {
+        return {
+          status: "error",
+          messages: nextMessages,
+          error: parsed.error.issues
+            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+            .join("\n"),
+        };
+      }
+
+      const extractorInput = getLastToolCallInput(
+        nextMessages,
+        "createExtractor",
+        agentCreateExtractorInputSchema,
+      );
+
+      if (!extractorInput) {
+        return {
+          status: "error",
+          messages: nextMessages,
+          error: "The agent submitted UI before creating an extractor.",
+        };
+      }
+
+      return {
+        status: "readyToInject",
+        messages: nextMessages,
+        toolCallId: injectUiCall.toolCallId,
+        extractor: extractorFromAgentInput(extractorInput),
+        spec: stripHtmlCodeFence(parsed.data.html),
+      };
+    }
+
+    return {
+      status: "done",
+      messages: nextMessages,
+      text: result.text,
+    };
   }
 
   async generateJsonRender(input: UIRequest): Promise<string> {

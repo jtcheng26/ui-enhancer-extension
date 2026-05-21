@@ -9,6 +9,7 @@ import {
   createUiSpec,
   detectUsabilityIssues,
   getUsabilityDetectionContext,
+  runUiGenerationAgent,
   showUsabilityViolations as showUsabilityViolationHighlights,
   submitAugmentationRequest,
 } from "../../services/command-service";
@@ -23,6 +24,7 @@ import type {
   PersistedAugmentation,
   SchemaDiscoveryResult,
   SelectedElement,
+  UiGenerationAgentResponse,
   UsabilityGenerationTask,
   UsabilityViolation,
 } from "../../types";
@@ -35,12 +37,14 @@ import { useAugmentationEngine } from "@/content/use-augmentation-engine";
 import { mapElementToSelectedElement } from "@/content/selection-state";
 import { logger } from "@/utils/logger";
 import {
+  inspectSelectedDomTree,
+  inspectSelectedMarkupContext,
   resolveSelectedElement,
   screenshotElement,
   withElementHidden,
   withElementsHidden,
 } from "@/services/dom-inspection-service";
-import { RENDER_SYSTEMS, RenderSystemId } from "@/services/renderer/renderer";
+import { RenderSystemId } from "@/services/renderer/renderer";
 
 interface CommandPanelProps {
   surface: "popup" | "sidepanel";
@@ -67,11 +71,21 @@ interface RequestSettings {
 }
 
 type GenerationStep =
+  | { phase: "agent-audit" }
+  | { phase: "agent-extractor" }
+  | { phase: "agent-preview"; data?: Record<string, ExtractedValue> }
+  | { phase: "agent-ui"; data?: Record<string, ExtractedValue> }
   | { phase: "extractor" }
   | { phase: "parsing"; data: Record<string, ExtractedValue> }
   | { phase: "ui"; data: Record<string, ExtractedValue> };
 
 interface UsabilityReviewState {
+  violations: UsabilityViolation[];
+}
+
+interface AgentWorkflowState {
+  approvalId: string;
+  messages: UiGenerationAgentResponse["messages"];
   violations: UsabilityViolation[];
 }
 
@@ -140,6 +154,8 @@ export function CommandPanel({
     useState(false);
   const [usabilityReview, setUsabilityReview] =
     useState<UsabilityReviewState | null>(null);
+  const [agentWorkflow, setAgentWorkflow] =
+    useState<AgentWorkflowState | null>(null);
   const [usabilityStatusMessage, setUsabilityStatusMessage] = useState<
     string | null
   >(null);
@@ -191,6 +207,31 @@ export function CommandPanel({
   async function refreshPersistedAugmentations() {
     const storedAugmentations = await persistedAugmentationStore.list();
     setPersistedAugmentations(storedAugmentations);
+  }
+
+  async function captureSelectedElementScreenshot(
+    requestSelectedElement: SelectedElement | null,
+  ) {
+    if (!requestSelectedElement) {
+      return "";
+    }
+
+    const selectedDomElement = resolveSelectedElement(requestSelectedElement);
+
+    if (!selectedDomElement) {
+      return "";
+    }
+
+    const floatingPopupHost = document
+      .querySelector("ai-ui-floating-popup")
+      ?.shadowRoot?.querySelector("#aui-popup");
+    const overlays = document.querySelectorAll("[data-aui-overlay=true]");
+
+    return floatingPopupHost
+      ? await withElementsHidden([floatingPopupHost, ...overlays], () =>
+          screenshotElement(selectedDomElement),
+        )
+      : await screenshotElement(selectedDomElement);
   }
 
   useEffect(() => {
@@ -249,23 +290,8 @@ export function CommandPanel({
       return false;
     }
 
-    let screenshot = "";
-
-    if (requestSelectedElement) {
-      const selectedDomElement = resolveSelectedElement(requestSelectedElement);
-
-      if (selectedDomElement) {
-        const floatingPopupHost = document
-          .querySelector("ai-ui-floating-popup")
-          ?.shadowRoot?.querySelector("#aui-popup");
-        const overlays = document.querySelectorAll("[data-aui-overlay=true]");
-        screenshot = floatingPopupHost
-          ? await withElementsHidden([floatingPopupHost, ...overlays], () =>
-              screenshotElement(selectedDomElement),
-            )
-          : await screenshotElement(selectedDomElement);
-      }
-    }
+    const screenshot =
+      await captureSelectedElementScreenshot(requestSelectedElement);
 
     const submissionVersion = submissionVersionRef.current + 1;
     submissionVersionRef.current = submissionVersion;
@@ -344,6 +370,302 @@ export function CommandPanel({
     }
   }
 
+  async function getAgentDetectionContext() {
+    if (runWithUiHidden) {
+      setIsCapturingUsabilityContext(true);
+
+      try {
+        return await runWithUiHidden(() => getUsabilityDetectionContext());
+      } finally {
+        setIsCapturingUsabilityContext(false);
+      }
+    }
+
+    return getUsabilityDetectionContext();
+  }
+
+  async function renderDraftAndCaptureScreenshot(
+    extractor: DOMExtractorSpec,
+    spec: string,
+  ) {
+    if (!augmentationEngine) {
+      throw new Error("The augmentation engine was not available.");
+    }
+
+    return augmentationEngine.renderDraftForScreenshot(
+      extractor,
+      spec,
+      "markup",
+      (element) =>
+        runWithUiHidden
+          ? runWithUiHidden(() => screenshotElement(element, { quality: 0.92 }))
+          : screenshotElement(element, { quality: 0.92 }),
+    );
+  }
+
+  async function continueAgentResponse(
+    initialResponse: UiGenerationAgentResponse | null,
+    submissionVersion: number,
+  ) {
+    let response = initialResponse;
+    let iterationCount = 0;
+
+    while (response && iterationCount < 8) {
+      iterationCount += 1;
+
+      if (submissionVersion !== submissionVersionRef.current) {
+        return false;
+      }
+
+      switch (response.status) {
+        case "needsApproval": {
+          setAgentWorkflow({
+            approvalId: response.approvalId,
+            messages: response.messages,
+            violations: response.violations,
+          });
+          setUsabilityReview({ violations: response.violations });
+          await showUsabilityViolationHighlights(response.violations);
+          setGenerationStep(null);
+          return false;
+        }
+        case "needsExtractorResult": {
+          setGenerationStep({ phase: "agent-extractor" });
+          const parsed = validateAndParse(response.extractor);
+
+          if (!parsed.data) {
+            response = await runUiGenerationAgent({
+              prompt: prompt.trim(),
+              source: surface,
+              messages: response.messages,
+              extractorResult: {
+                toolCallId: response.toolCallId,
+                extractor: response.extractor,
+                valid: false,
+                errors: parsed.errors,
+              },
+            });
+            continue;
+          }
+
+          const rootSelectedElement =
+            parsed.root instanceof HTMLElement
+              ? mapElementToSelectedElement(parsed.root)
+              : null;
+
+          const [rootScreenshot, rootSnapshot, markupContext] =
+            rootSelectedElement
+              ? await Promise.all([
+                  captureSelectedElementScreenshot(rootSelectedElement),
+                  Promise.resolve(
+                    inspectSelectedDomTree(rootSelectedElement) ?? undefined,
+                  ),
+                  Promise.resolve(
+                    inspectSelectedMarkupContext(rootSelectedElement) ??
+                      undefined,
+                  ),
+                ])
+              : ["", undefined, undefined];
+
+          setGenerationStep({ phase: "agent-preview", data: parsed.data });
+
+          response = await runUiGenerationAgent({
+            prompt: prompt.trim(),
+            source: surface,
+            messages: response.messages,
+            extractorResult: {
+              toolCallId: response.toolCallId,
+              extractor: response.extractor,
+              valid: true,
+              data: parsed.data,
+              snapshot: rootSnapshot,
+              markupContext,
+              screenshot: rootScreenshot,
+            },
+          });
+          continue;
+        }
+        case "needsDraftRender": {
+          const draftRenderRequest = response;
+          const parsed = validateAndParse(draftRenderRequest.extractor);
+          setGenerationStep({
+            phase: "agent-preview",
+            data: parsed.data ?? undefined,
+          });
+
+          try {
+            const screenshot = await renderDraftAndCaptureScreenshot(
+              draftRenderRequest.extractor,
+              draftRenderRequest.spec,
+            );
+
+            response = await runUiGenerationAgent({
+              prompt: prompt.trim(),
+              source: surface,
+              messages: draftRenderRequest.messages,
+              draftRenderResult: {
+                toolCallId: draftRenderRequest.toolCallId,
+                extractor: draftRenderRequest.extractor,
+                spec: draftRenderRequest.spec,
+                success: true,
+                screenshot,
+              },
+            });
+          } catch (error) {
+            response = await runUiGenerationAgent({
+              prompt: prompt.trim(),
+              source: surface,
+              messages: draftRenderRequest.messages,
+              draftRenderResult: {
+                toolCallId: draftRenderRequest.toolCallId,
+                extractor: draftRenderRequest.extractor,
+                spec: draftRenderRequest.spec,
+                success: false,
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "Draft rendering failed.",
+              },
+            });
+          }
+
+          continue;
+        }
+        case "readyToInject": {
+          setGenerationStep({ phase: "agent-ui" });
+
+          if (!augmentationEngine) {
+            setUsabilityStatusMessage(
+              "The agent finished, but the augmentation engine was not available.",
+            );
+            setGenerationStep(null);
+            return false;
+          }
+
+          const injectedAugmentation = await augmentationEngine.inject(
+            response.extractor,
+            response.spec,
+            "markup",
+          );
+
+          if (submissionVersion !== submissionVersionRef.current) {
+            return false;
+          }
+
+          updatePendingAugmentationId(injectedAugmentation?.id ?? null);
+          void disableSelectionModeIfEnabled();
+          setAgentWorkflow(null);
+          setGenerationStep(null);
+          return Boolean(injectedAugmentation?.id);
+        }
+        case "done": {
+          setUsabilityStatusMessage(response.text || "The agent finished.");
+          setAgentWorkflow(null);
+          setGenerationStep(null);
+          return false;
+        }
+        case "error": {
+          logger.error("UI generation agent failed.", response.error);
+          setUsabilityStatusMessage(response.error);
+          setAgentWorkflow(null);
+          setGenerationStep(null);
+          return false;
+        }
+      }
+    }
+
+    setUsabilityStatusMessage("The agent stopped before producing a preview.");
+    setAgentWorkflow(null);
+    setGenerationStep(null);
+    return false;
+  }
+
+  async function handleRunAgentWorkflow() {
+    if (!prompt.trim()) {
+      return;
+    }
+
+    await clearUsabilityReview();
+    setAgentWorkflow(null);
+
+    const submissionVersion = submissionVersionRef.current + 1;
+    submissionVersionRef.current = submissionVersion;
+    setGenerationStep({ phase: "agent-audit" });
+
+    try {
+      const context = await getAgentDetectionContext();
+
+      if (!context) {
+        setUsabilityStatusMessage(
+          "The agent could not inspect the current page.",
+        );
+        return false;
+      }
+
+      const response = await runUiGenerationAgent({
+        prompt: prompt.trim(),
+        source: surface,
+        snapshot: context.snapshot,
+        screenshot: context.screenshot,
+      });
+
+      return await continueAgentResponse(response, submissionVersion);
+    } catch (error) {
+      logger.error("Failed to run UI generation agent.", error);
+      setUsabilityStatusMessage(
+        error instanceof Error ? error.message : "The agent workflow failed.",
+      );
+      return false;
+    } finally {
+      if (submissionVersion === submissionVersionRef.current) {
+        setIsCapturingUsabilityContext(false);
+        setGenerationStep(null);
+      }
+    }
+  }
+
+  async function continueAgentAfterApproval() {
+    if (!agentWorkflow) {
+      return;
+    }
+
+    const activeAgentWorkflow = agentWorkflow;
+    const submissionVersion = submissionVersionRef.current + 1;
+    submissionVersionRef.current = submissionVersion;
+
+    setAgentWorkflow(null);
+    setUsabilityReview(null);
+    setUsabilityStatusMessage(null);
+    await clearUsabilityViolationHighlights();
+    setGenerationStep({ phase: "agent-extractor" });
+
+    try {
+      const response = await runUiGenerationAgent({
+        prompt: prompt.trim(),
+        source: surface,
+        messages: activeAgentWorkflow.messages,
+        approval: {
+          approvalId: activeAgentWorkflow.approvalId,
+          approved: true,
+          reason: "User approved the reported UI issues.",
+        },
+      });
+
+      await continueAgentResponse(response, submissionVersion);
+    } catch (error) {
+      logger.error("Failed to continue UI generation agent.", error);
+      setUsabilityStatusMessage(
+        error instanceof Error
+          ? error.message
+          : "The agent workflow could not continue.",
+      );
+    } finally {
+      if (submissionVersion === submissionVersionRef.current) {
+        setGenerationStep(null);
+      }
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -352,12 +674,14 @@ export function CommandPanel({
     }
 
     await clearUsabilityReview();
+    setAgentWorkflow(null);
     await runGenerationPipeline(prompt, selectedElement);
   }
 
   function handleCancelLoading() {
     submissionVersionRef.current += 1;
     setGenerationStep(null);
+    setAgentWorkflow(null);
     updateUsabilityGenerationQueue([]);
     updateActiveUsabilityGenerationTaskId(null);
   }
@@ -492,6 +816,7 @@ export function CommandPanel({
   }) {
     setIsDetectingUsability(true);
     await clearUsabilityReview();
+    setAgentWorkflow(null);
 
     try {
       const violations = USE_EXAMPLE_VIOLATIONS_FOR_ACKNOWLEDGEMENT
@@ -533,6 +858,11 @@ export function CommandPanel({
   }
 
   async function handleAcknowledgeUsabilityIssues() {
+    if (agentWorkflow) {
+      await continueAgentAfterApproval();
+      return;
+    }
+
     if (!usabilityReview) {
       return;
     }
@@ -542,6 +872,7 @@ export function CommandPanel({
   }
 
   async function handleCancelUsabilityIssues() {
+    setAgentWorkflow(null);
     await clearUsabilityReview();
   }
 
@@ -693,24 +1024,52 @@ export function CommandPanel({
   }
 
   if (generationStep) {
+    const isAgentStep = generationStep.phase.startsWith("agent-");
     const steps: {
       phase: GenerationStep["phase"];
       label: string;
       detail: string;
-    }[] = [
-      {
-        phase: "extractor",
-        label: "Reading the page",
-        detail:
-          "Understanding the current page structure and identifying the right data to use.",
-      },
-      {
-        phase: "ui",
-        label: "Designing the view",
-        detail:
-          "Building the interface and preparing it for preview on the page.",
-      },
-    ];
+    }[] = isAgentStep
+      ? [
+          {
+            phase: "agent-audit",
+            label: "Auditing the page",
+            detail:
+              "Reviewing the screenshot and DOM for usability issues to fix.",
+          },
+          {
+            phase: "agent-extractor",
+            label: "Reading live data",
+            detail:
+              "Creating and validating the extractor for the replacement section.",
+          },
+          {
+            phase: "agent-preview",
+            label: "Previewing the draft",
+            detail:
+              "Rendering the draft on the page and capturing it for the agent to revise.",
+          },
+          {
+            phase: "agent-ui",
+            label: "Preparing the preview",
+            detail:
+              "Submitting the revised fragment for preview on the page.",
+          },
+        ]
+      : [
+          {
+            phase: "extractor",
+            label: "Reading the page",
+            detail:
+              "Understanding the current page structure and identifying the right data to use.",
+          },
+          {
+            phase: "ui",
+            label: "Designing the view",
+            detail:
+              "Building the interface and preparing it for preview on the page.",
+          },
+        ];
 
     const currentIndex = steps.findIndex(
       (s) => s.phase === generationStep.phase,
@@ -730,7 +1089,7 @@ export function CommandPanel({
           <div className="grid gap-1 text-center">
             <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-sky-100 border-t-sky-500" />
             <h1 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-              Preparing your preview
+              {isAgentStep ? "Agent is working" : "Preparing your preview"}
             </h1>
           </div>
 
@@ -1020,6 +1379,14 @@ export function CommandPanel({
               {generationStep ? "Building..." : "Generate"}
             </button>
             <button
+              className="inline-flex items-center justify-center rounded-full bg-violet-100 px-4 py-2 text-sm font-medium text-violet-900 transition hover:-translate-y-0.5 hover:bg-violet-200 disabled:translate-y-0 disabled:opacity-60 cursor-pointer"
+              type="button"
+              disabled={isBusy}
+              onClick={() => void handleRunAgentWorkflow()}
+            >
+              Agent Flow
+            </button>
+            <button
               className="inline-flex items-center justify-center rounded-full bg-amber-100 px-4 py-2 text-sm font-medium text-amber-900 transition hover:-translate-y-0.5 hover:bg-amber-200 disabled:translate-y-0 disabled:opacity-60 cursor-pointer"
               type="button"
               disabled={isBusy}
@@ -1050,7 +1417,7 @@ export function CommandPanel({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-700">
-                  Usability Review
+                  {agentWorkflow ? "Agent Review" : "Usability Review"}
                 </p>
                 <h2 className="text-lg font-semibold tracking-tight text-slate-950">
                   Highlighted issues on the page
@@ -1062,8 +1429,9 @@ export function CommandPanel({
             </div>
 
             <p className="text-sm leading-6 text-slate-600">
-              Hover the page highlights to inspect each violation, then
-              acknowledge or cancel this review.
+              {agentWorkflow
+                ? "Approve these findings to let the agent generate and preview the replacement UI."
+                : "Hover the page highlights to inspect each violation, then acknowledge or cancel this review."}
             </p>
 
             <div className="grid max-h-48 gap-2 overflow-auto">
@@ -1098,7 +1466,7 @@ export function CommandPanel({
                 type="button"
                 onClick={() => void handleAcknowledgeUsabilityIssues()}
               >
-                Acknowledge
+                {agentWorkflow ? "Approve" : "Acknowledge"}
               </button>
               <button
                 className="inline-flex items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:-translate-y-0.5 hover:bg-slate-50 cursor-pointer"

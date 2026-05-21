@@ -2,6 +2,8 @@ import type {
   AugmentationRequest,
   ExtensionRuntimeMessage,
   SelectedElement,
+  UiGenerationAgentCommandPayload,
+  UiGenerationAgentResponse,
   UsabilityDetectionContext,
   UsabilityViolation,
 } from "../types";
@@ -131,6 +133,42 @@ export async function detectUsabilityIssues(
   }
 
   return res.data ?? [];
+}
+
+export async function runUiGenerationAgent(
+  payload: UiGenerationAgentCommandPayload,
+): Promise<UiGenerationAgentResponse | null> {
+  if (!payload.messages && payload.prompt.trim()) {
+    await settingsStore.patch({
+      lastCommand: payload.prompt.trim(),
+    });
+
+    if (payload.snapshot) {
+      const request: AugmentationRequest = {
+        id: crypto.randomUUID(),
+        prompt: payload.prompt.trim(),
+        createdAt: new Date().toISOString(),
+        source: payload.source,
+        status: "mock-submitted",
+        snapshot: payload.snapshot,
+      };
+
+      await requestStore.add(request);
+      await requestStore.trim();
+    }
+  }
+
+  const res = await browser.runtime.sendMessage({
+    type: "command/run-ui-agent",
+    payload,
+  } satisfies ExtensionRuntimeMessage);
+
+  if (!res?.data) {
+    logger.error("Failed to run UI generation agent.", res?.error);
+    return null;
+  }
+
+  return res.data as UiGenerationAgentResponse;
 }
 
 export async function getUsabilityDetectionContext() {

@@ -79,6 +79,16 @@ export function registerMessageRouter() {
               }),
             );
           return true;
+        case "command/run-ui-agent":
+          commandHandler()
+            .runUiAgent(message.payload)
+            .then((res) => sendResponse({ data: res }))
+            .catch((err) =>
+              sendResponse({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          return true;
         case "augmentation/inject":
         case "usability/show-violations":
         case "usability/clear-violations":

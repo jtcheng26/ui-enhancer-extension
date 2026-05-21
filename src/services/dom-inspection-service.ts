@@ -372,7 +372,15 @@ export async function getUsabilityDetectionContext(
   };
 }
 
-export async function screenshotElement(element: Element) {
+interface ScreenshotElementOptions {
+  quality?: number;
+  type?: "image/jpeg" | "image/png";
+}
+
+export async function screenshotElement(
+  element: Element,
+  options: ScreenshotElementOptions = {},
+) {
   // element.scrollIntoView({ behavior: "instant", block: "center" });
   await waitForVisualSettle(SCREENSHOT_SETTLE_DELAY_MS);
 
@@ -380,6 +388,8 @@ export async function screenshotElement(element: Element) {
 
   const rect = element.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
+  const type = options.type ?? "image/jpeg";
+  const quality = options.quality ?? 0.2;
 
   const img: HTMLImageElement = await new Promise((resolve, reject) => {
     const i = new Image();
@@ -389,8 +399,8 @@ export async function screenshotElement(element: Element) {
   });
 
   const canvas = document.createElement("canvas");
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
+  canvas.width = Math.ceil(rect.width * dpr);
+  canvas.height = Math.ceil(rect.height * dpr);
 
   canvas
     .getContext("2d")
@@ -407,6 +417,6 @@ export async function screenshotElement(element: Element) {
     );
 
   return canvas
-    .toDataURL("image/jpeg", 0.2)
+    .toDataURL(type, type === "image/jpeg" ? quality : undefined)
     .replace(/^data:image\/\w+;base64,/, "");
 }

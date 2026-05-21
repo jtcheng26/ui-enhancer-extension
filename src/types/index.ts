@@ -3,6 +3,7 @@ import type {
   ExtractedValue,
 } from "../services/dom-extractor";
 import { RenderSystemId } from "@/services/renderer/renderer";
+import type { ModelMessage } from "ai";
 
 export interface ElementRect {
   top: number;
@@ -114,6 +115,80 @@ export interface DetectUsabilityCommandPayload {
   screenshot?: string;
 }
 
+export interface UiGenerationAgentExtractorResult {
+  toolCallId: string;
+  extractor: DOMExtractorSpec;
+  valid: boolean;
+  errors?: string[];
+  data?: Record<string, ExtractedValue>;
+  snapshot?: SelectedDomTreeSnapshot;
+  markupContext?: SelectedMarkupContext;
+  screenshot?: string;
+}
+
+export interface UiGenerationAgentDraftRenderResult {
+  toolCallId: string;
+  extractor: DOMExtractorSpec;
+  spec: string;
+  success: boolean;
+  screenshot?: string;
+  error?: string;
+}
+
+export interface UiGenerationAgentCommandPayload {
+  prompt: string;
+  source: AugmentationRequest["source"];
+  snapshot?: SelectedDomTreeSnapshot;
+  screenshot?: string;
+  messages?: ModelMessage[];
+  approval?: {
+    approvalId: string;
+    approved: boolean;
+    reason?: string;
+  };
+  extractorResult?: UiGenerationAgentExtractorResult;
+  draftRenderResult?: UiGenerationAgentDraftRenderResult;
+}
+
+export type UiGenerationAgentResponse =
+  | {
+      status: "needsApproval";
+      messages: ModelMessage[];
+      approvalId: string;
+      toolCallId: string;
+      violations: UsabilityViolation[];
+    }
+  | {
+      status: "needsExtractorResult";
+      messages: ModelMessage[];
+      toolCallId: string;
+      extractor: DOMExtractorSpec;
+    }
+  | {
+      status: "needsDraftRender";
+      messages: ModelMessage[];
+      toolCallId: string;
+      extractor: DOMExtractorSpec;
+      spec: string;
+    }
+  | {
+      status: "readyToInject";
+      messages: ModelMessage[];
+      toolCallId: string;
+      extractor: DOMExtractorSpec;
+      spec: string;
+    }
+  | {
+      status: "done";
+      messages: ModelMessage[];
+      text: string;
+    }
+  | {
+      status: "error";
+      messages: ModelMessage[];
+      error: string;
+    };
+
 export interface DomQueryPayload {
   selector: string;
   limit?: number;
@@ -218,6 +293,10 @@ export type ExtensionRuntimeMessage =
   | {
       type: "command/detect-usability";
       payload: DetectUsabilityCommandPayload;
+    }
+  | {
+      type: "command/run-ui-agent";
+      payload: UiGenerationAgentCommandPayload;
     }
   | {
       type: "command/create-ui";

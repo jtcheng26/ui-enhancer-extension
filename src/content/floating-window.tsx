@@ -40,6 +40,7 @@ export function FloatingWindow({
     useState<string | null>(null);
 
   const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const captureRootRef = useRef<HTMLDivElement | null>(null);
   const resizeRef = useRef<{
     edge: ResizeEdge;
     startX: number;
@@ -144,12 +145,23 @@ export function FloatingWindow({
   }
 
   async function runWithUiHidden<T>(task: () => Promise<T>) {
+    const captureRoot = captureRootRef.current;
+    const previousDisplay = captureRoot?.style.display;
+
+    if (captureRoot) {
+      captureRoot.style.display = "none";
+    }
+
     setIsUiHiddenForCapture(true);
     await waitForUiPaint();
 
     try {
       return await task();
     } finally {
+      if (captureRoot) {
+        captureRoot.style.display = previousDisplay ?? "";
+      }
+
       setIsUiHiddenForCapture(false);
       await waitForUiPaint(0);
     }
@@ -160,6 +172,7 @@ export function FloatingWindow({
   if (pendingAugmentationId) {
     return (
       <div
+        ref={captureRootRef}
         className="fixed bottom-6 left-1/2 z-[2147483647] -translate-x-1/2"
         style={{ display: isUiHiddenForCapture ? "none" : undefined }}
       >
@@ -191,10 +204,13 @@ export function FloatingWindow({
   }
 
   return (
-    <div style={{ display: isUiHiddenForCapture ? "none" : undefined }}>
-      {isLoading ? (
+    <div
+      ref={captureRootRef}
+      style={{ display: isUiHiddenForCapture ? "none" : undefined }}
+    >
+      {/* {isLoading ? (
         <div className="fixed inset-0 z-[2147483645] bg-white/18 backdrop-blur-md" />
-      ) : null}
+      ) : null} */}
       <div
         className="fixed left-0 top-0 z-[2147483647]" id="aui-popup"
         style={{ transform: `translate(${position.x}px, ${position.y}px)` }}

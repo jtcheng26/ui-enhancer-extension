@@ -129,6 +129,13 @@ function createStoreUpdates(
   return updates;
 }
 
+async function waitForDraftRenderPaint() {
+  await new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(resolve)),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 100));
+}
+
 export class AugmentationEngine {
   private readonly augmentations = new Map<string, InjectedAugmentation>();
   private readonly mountedAugmentations = new Map<
@@ -296,6 +303,77 @@ export class AugmentationEngine {
     document.getElementById(shadowRootName)?.remove();
 
     return augmentation;
+  }
+
+  async renderDraftForScreenshot<T>(
+    extractor: DOMExtractorSpec,
+    spec: string,
+    renderSystemId: RenderSystemId,
+    capture: (element: HTMLElement) => Promise<T>,
+  ) {
+    const id = crypto.randomUUID();
+    const shadowRootName = `draft-preview-${id}`;
+    const { data, root: replacedElement } = validateAndParse(extractor);
+
+    if (!data || !(replacedElement instanceof HTMLElement)) {
+      throw new Error("Unable to render draft because the extractor did not resolve.");
+    }
+
+    const usesBodyWrapper = replacedElement === this.root.body;
+    const hiddenElement = usesBodyWrapper
+      ? this.acquireBodyContentWrapper()
+      : replacedElement;
+    const originalDisplay = hiddenElement.style.display;
+    const originalAriaHidden = hiddenElement.getAttribute("aria-hidden");
+    const mountAnchor = this.root.createElement("div");
+    let ui: ShadowRootContentScriptUi<{ root: ReactDOM.Root }> | undefined;
+
+    if (usesBodyWrapper) {
+      this.root.body.appendChild(mountAnchor);
+    } else {
+      replacedElement.insertAdjacentElement("afterend", mountAnchor);
+    }
+
+    hiddenElement.style.display = "none";
+    hiddenElement.setAttribute("aria-hidden", "true");
+
+    try {
+      ui = await createShadowRootUi(this.ctx, {
+        name: shadowRootName,
+        position: "inline",
+        anchor: mountAnchor,
+        append: "replace",
+        onMount: (uiContainer) => {
+          const root = ReactDOM.createRoot(uiContainer);
+          RENDER_SYSTEMS[renderSystemId].render(root, data, spec, uiContainer);
+          return { root };
+        },
+        onRemove: (mounted) => {
+          mounted?.root.unmount();
+        },
+      });
+
+      ui.mount();
+      ui.shadowHost.style.display = "block";
+      await waitForDraftRenderPaint();
+      return await capture(ui.shadowHost);
+    } finally {
+      ui?.remove();
+
+      if (usesBodyWrapper) {
+        this.releaseBodyContentWrapper();
+      } else {
+        hiddenElement.style.display = originalDisplay;
+
+        if (originalAriaHidden === null) {
+          hiddenElement.removeAttribute("aria-hidden");
+        } else {
+          hiddenElement.setAttribute("aria-hidden", originalAriaHidden);
+        }
+      }
+
+      mountAnchor.remove();
+    }
   }
 
   highlightAugmentation(id: string) {

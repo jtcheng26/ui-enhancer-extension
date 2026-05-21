@@ -4,6 +4,8 @@ import {
   UsabilityDetectionContext,
   UsabilityRule,
   UsabilityViolation,
+  UiGenerationAgentCommandPayload,
+  UiGenerationAgentResponse,
 } from "@/types";
 import { DOMExtractorSpec } from "../../services/dom-extractor";
 import { Spec } from "@json-render/react";
@@ -22,4 +24,7 @@ export interface AIProvider {
   detectUsabilityIssues(
     input: UsabilityDetectionRequest,
   ): Promise<UsabilityViolation[]>;
+  runUiGenerationAgent(
+    input: UiGenerationAgentCommandPayload,
+  ): Promise<UiGenerationAgentResponse>;
 }

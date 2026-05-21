@@ -4,6 +4,7 @@ import {
   CreateUiCommandPayload,
   UsabilityDetectionContext,
   DetectUsabilityCommandPayload,
+  UiGenerationAgentCommandPayload,
 } from "@/types";
 
 export const commandHandler = () => ({
@@ -22,5 +23,9 @@ export const commandHandler = () => ({
   ) => {
     const ai = new ClientAIProvider(import.meta.env.WXT_OPENAI_API_KEY);
     return ai.detectUsabilityIssues(payload);
+  },
+  runUiAgent: (payload: UiGenerationAgentCommandPayload) => {
+    const ai = new ClientAIProvider(import.meta.env.WXT_OPENAI_API_KEY);
+    return ai.runUiGenerationAgent(payload);
   },
 });
