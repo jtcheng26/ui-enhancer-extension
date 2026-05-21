@@ -61,12 +61,23 @@ const MAX_PROMPT_STRING_LENGTH = 240;
 const MAX_PROMPT_ARRAY_ITEMS = 8;
 const MAX_PROMPT_OBJECT_KEYS = 24;
 const MAX_AGENT_DRAFT_RENDERS = 3;
+const MAX_RENDERED_DRAFT_HTML_LENGTH = 6000;
 const DEFAULT_AGENT_AUDIT_PROMPT = "Fix usability and design issues in the UI";
 
 function clipPromptString(value: string): string {
   return value.length <= MAX_PROMPT_STRING_LENGTH
     ? value
     : `${value.slice(0, MAX_PROMPT_STRING_LENGTH)}...`;
+}
+
+function clipRenderedDraftHtml(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  return value.length <= MAX_RENDERED_DRAFT_HTML_LENGTH
+    ? value
+    : `${value.slice(0, MAX_RENDERED_DRAFT_HTML_LENGTH)}<!-- truncated rendered draft -->`;
 }
 
 function isClickActionValue(value: ExtractedValue): value is ClickActionValue {
@@ -571,6 +582,7 @@ function createDraftRenderToolResultMessage(
             success: result.success,
             kind: result.kind ?? "ui",
             screenshotAvailable: Boolean(result.screenshot),
+            renderedHtml: clipRenderedDraftHtml(result.renderedHtml),
             draftCount,
             maxDrafts: MAX_AGENT_DRAFT_RENDERS,
             error: result.error,

@@ -134,6 +134,7 @@ export interface UiGenerationAgentDraftRenderResult {
   css?: UiGenerationAgentCssInjection;
   success: boolean;
   screenshot?: string;
+  renderedHtml?: string;
   error?: string;
 }
 

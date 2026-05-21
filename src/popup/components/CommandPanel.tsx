@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import * as Collapsible from "@radix-ui/react-collapsible";
 
 import { discoverAndStoreSchema } from "../../schema/schema-service";
 import { persistedAugmentationStore } from "../../storage/persisted-augmentation-store";
@@ -149,6 +148,7 @@ export function CommandPanel({
   onPreviewModeChange,
 }: CommandPanelProps) {
   const [prompt, setPrompt] = useState("");
+  const [skipApprovals, setSkipApprovals] = useState(false);
   const [persistedAugmentations, setPersistedAugmentations] = useState<
     PersistedAugmentation[]
   >([]);
@@ -161,8 +161,9 @@ export function CommandPanel({
     useState(false);
   const [usabilityReview, setUsabilityReview] =
     useState<UsabilityReviewState | null>(null);
-  const [agentWorkflow, setAgentWorkflow] =
-    useState<AgentWorkflowState | null>(null);
+  const [agentWorkflow, setAgentWorkflow] = useState<AgentWorkflowState | null>(
+    null,
+  );
   const [usabilityStatusMessage, setUsabilityStatusMessage] = useState<
     string | null
   >(null);
@@ -298,8 +299,9 @@ export function CommandPanel({
       return false;
     }
 
-    const screenshot =
-      await captureSelectedElementScreenshot(requestSelectedElement);
+    const screenshot = await captureSelectedElementScreenshot(
+      requestSelectedElement,
+    );
 
     const submissionVersion = submissionVersionRef.current + 1;
     submissionVersionRef.current = submissionVersion;
@@ -420,7 +422,7 @@ export function CommandPanel({
       (element) =>
         runWithUiHidden
           ? runWithUiHidden(() => screenshotElement(element, { quality: 0.92 }))
-      : screenshotElement(element, { quality: 0.92 }),
+          : screenshotElement(element, { quality: 0.92 }),
     );
   }
 
@@ -458,6 +460,21 @@ export function CommandPanel({
 
       switch (response.status) {
         case "needsApproval": {
+          if (skipApprovals) {
+            setGenerationStep({ phase: "agent-extractor" });
+            response = await runUiGenerationAgent({
+              ...getActiveAgentRequest(),
+              source: surface,
+              messages: response.messages,
+              approval: {
+                approvalId: response.approvalId,
+                approved: true,
+                reason: "Approvals were skipped for this run.",
+              },
+            });
+            continue;
+          }
+
           setAgentWorkflow({
             approvalId: response.approvalId,
             messages: response.messages,
@@ -631,6 +648,12 @@ export function CommandPanel({
 
           updatePendingAugmentationId(injectedAugmentation?.id ?? null);
           void disableSelectionModeIfEnabled();
+
+          if (skipApprovals && injectedAugmentation?.id) {
+            await persistAugmentationPreview(injectedAugmentation.id);
+            setUsabilityStatusMessage("Saved the agent update.");
+          }
+
           setAgentWorkflow(null);
           activeAgentRequestRef.current = null;
           setGenerationStep(null);
@@ -661,6 +684,12 @@ export function CommandPanel({
 
           updatePendingAugmentationId(injectedAugmentation?.id ?? null);
           void disableSelectionModeIfEnabled();
+
+          if (skipApprovals && injectedAugmentation?.id) {
+            await persistAugmentationPreview(injectedAugmentation.id);
+            setUsabilityStatusMessage("Saved the agent CSS update.");
+          }
+
           setAgentWorkflow(null);
           activeAgentRequestRef.current = null;
           setGenerationStep(null);
@@ -989,13 +1018,19 @@ export function CommandPanel({
     await clearUsabilityReview();
   }
 
-  async function handleConfirmAugmentation() {
-    if (!augmentationEngine || !pendingAugmentationId) return;
+  async function persistAugmentationPreview(augmentationId: string) {
+    if (!augmentationEngine) return;
 
-    await augmentationEngine.persistAugmentation(pendingAugmentationId);
+    await augmentationEngine.persistAugmentation(augmentationId);
     await refreshPersistedAugmentations();
     updatePendingAugmentationId(null);
     completeActiveUsabilityGenerationTask();
+  }
+
+  async function handleConfirmAugmentation() {
+    if (!pendingAugmentationId) return;
+
+    await persistAugmentationPreview(pendingAugmentationId);
   }
 
   async function handleDeletePreviewAugmentation() {
@@ -1285,233 +1320,53 @@ export function CommandPanel({
         }`}
       >
         <header className="grid gap-2">
-          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700">
-            Live Preview Studio
-          </span>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
-            Shape this page with a prompt
+            Revise this page
           </h1>
-          <p className="text-sm leading-6 text-slate-600">
-            Describe what you want to see, preview it on the page, and save the
-            versions you want to keep.
-          </p>
+          {/* <p className="text-sm leading-6 text-slate-600">
+            What would you like to change?
+          </p> */}
         </header>
 
-        {/* ── Selection mode ── */}
-        <div
-          className={`flex cursor-pointer items-center gap-3 rounded-2xl border p-3.5 transition hover:-translate-y-0.5 ${
-            settings?.selectionModeEnabled
-              ? "border-sky-300 bg-sky-50 shadow-sm"
-              : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white"
-          }`}
-          onClick={() => void handleSettingsToggle("selectionModeEnabled")}
-        >
-          <span className="text-xl">🖱️</span>
-          <div className="min-w-0 flex-1">
-            <p
-              className={`text-xs font-semibold ${settings?.selectionModeEnabled ? "text-sky-800" : "text-slate-700"}`}
-            >
-              Choose a target area
-            </p>
-            <p
-              className={`text-[11px] leading-4 ${settings?.selectionModeEnabled ? "text-sky-600" : "text-slate-500"}`}
-            >
-              {settings?.selectionModeEnabled
-                ? "On — click any part of the page to aim this request"
-                : "Off — turn this on to pick a specific part of the page"}
-            </p>
-          </div>
-          <div
-            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${
-              settings?.selectionModeEnabled
-                ? "bg-sky-200 text-sky-800"
-                : "bg-slate-200 text-slate-500"
-            }`}
-          >
-            {settings?.selectionModeEnabled ? "On" : "Off"}
-          </div>
-        </div>
-
-        {/* ── Selected element ── */}
-        {selectedElement ? (
-          <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-sky-700">
-              Selected area
-            </p>
-            <p className="mt-1 text-sm font-medium text-slate-900">
-              {selectedElement.selector}
-            </p>
-            <p className="mt-1 line-clamp-2 text-sm text-slate-600">
-              {selectedElement.textPreview || "No preview text available yet."}
-            </p>
-          </div>
-        ) : null}
-
         {/* ── Prompt form ── */}
-        <form className="grid gap-2" onSubmit={handleSubmit}>
+        <form
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleRunAgentWorkflow();
+          }}
+        >
           <label className="grid gap-2">
-            <span className="text-xs font-semibold tracking-wide text-slate-700">
+            <span className="text-xs tracking-wide text-slate-700">
               What would you like to change?
             </span>
             <textarea
+              data-testid="agent-prompt-input"
               className="min-h-32 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-4 focus:ring-sky-100"
-              placeholder="Example: Add a compact summary panel beside the selected section."
+              placeholder="Example: Add a compact summary panel beside the selected section. Leave empty to audit the UI for usability and design issues."
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
             />
           </label>
 
-          {/* ── Request settings ── */}
-          <Collapsible.Root open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <Collapsible.Trigger className="flex w-full items-center gap-2 rounded-xl px-1 py-1.5 text-left transition hover:bg-slate-100">
-              <span
-                className={`text-[11px] transition-transform duration-200 ${settingsOpen ? "rotate-90" : ""}`}
-              >
-                ▶
-              </span>
-              <span className="text-xs font-semibold text-slate-500">
-                Generation options
-              </span>
-              {/* Active summary pill shown when collapsed */}
-              {!settingsOpen && (
-                <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
-                  {
-                    STRATEGY_OPTIONS.find(
-                      (o) => o.value === requestSettings.strategy,
-                    )?.label
-                  }
-                </span>
-              )}
-            </Collapsible.Trigger>
-
-            <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-none">
-              <div className="grid gap-3 pt-2">
-                {/* Strategy picker */}
-                <div className="grid gap-1.5">
-                  <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Creation mode
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {STRATEGY_OPTIONS.map((option) => {
-                      const active = requestSettings.strategy === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() =>
-                            setRequestSettings((prev) => ({
-                              ...prev,
-                              strategy: option.value,
-                            }))
-                          }
-                          className={`flex flex-col gap-1 rounded-xl border p-3 text-left transition hover:-translate-y-0.5 cursor-pointer ${
-                            active
-                              ? "border-slate-800 bg-slate-950 shadow-sm"
-                              : "border-slate-200 bg-white hover:border-slate-300"
-                          }`}
-                        >
-                          <span className="text-base">{option.icon}</span>
-                          <span
-                            className={`text-xs font-semibold ${active ? "text-white" : "text-slate-700"}`}
-                          >
-                            {option.label}
-                          </span>
-                          <span
-                            className={`text-[11px] leading-4 ${active ? "text-slate-400" : "text-slate-500"}`}
-                          >
-                            {option.description}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="grid gap-1.5">
-                  <p className="px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Usability detection
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setRequestSettings((prev) => ({
-                        ...prev,
-                        useUsabilityRules: !prev.useUsabilityRules,
-                      }))
-                    }
-                    className={`flex items-center justify-between rounded-xl border p-3 text-left transition hover:-translate-y-0.5 cursor-pointer ${
-                      requestSettings.useUsabilityRules
-                        ? "border-amber-300 bg-amber-50"
-                        : "border-slate-200 bg-white hover:border-slate-300"
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <p
-                        className={`text-xs font-semibold ${
-                          requestSettings.useUsabilityRules
-                            ? "text-amber-900"
-                            : "text-slate-700"
-                        }`}
-                      >
-                        Use current rules
-                      </p>
-                      <p
-                        className={`text-[11px] leading-4 ${
-                          requestSettings.useUsabilityRules
-                            ? "text-amber-700"
-                            : "text-slate-500"
-                        }`}
-                      >
-                        {requestSettings.useUsabilityRules
-                          ? "On — detections follow the current usability rule set"
-                          : "Off — detections can flag any usability issue they find"}
-                      </p>
-                    </div>
-                    <span
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${
-                        requestSettings.useUsabilityRules
-                          ? "bg-amber-200 text-amber-900"
-                          : "bg-slate-200 text-slate-600"
-                      }`}
-                    >
-                      {requestSettings.useUsabilityRules ? "On" : "Off"}
-                    </span>
-                  </button>
-                </div>
-              </div>
-            </Collapsible.Content>
-          </Collapsible.Root>
-
-          <div className="flex flex-wrap gap-2 pt-1">
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
+              <input
+                data-testid="agent-skip-approvals-checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-slate-950"
+                type="checkbox"
+                checked={skipApprovals}
+                onChange={(event) => setSkipApprovals(event.target.checked)}
+              />
+              Skip approvals
+            </label>
             <button
+              data-testid="agent-flow-button"
               className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:opacity-60 cursor-pointer"
               type="submit"
               disabled={isBusy}
             >
-              {generationStep ? "Building..." : "Generate"}
-            </button>
-            <button
-              className="inline-flex items-center justify-center rounded-full bg-violet-100 px-4 py-2 text-sm font-medium text-violet-900 transition hover:-translate-y-0.5 hover:bg-violet-200 disabled:translate-y-0 disabled:opacity-60 cursor-pointer"
-              type="button"
-              disabled={isBusy}
-              onClick={() => void handleRunAgentWorkflow()}
-            >
-              Agent Flow
-            </button>
-            <button
-              className="inline-flex items-center justify-center rounded-full bg-amber-100 px-4 py-2 text-sm font-medium text-amber-900 transition hover:-translate-y-0.5 hover:bg-amber-200 disabled:translate-y-0 disabled:opacity-60 cursor-pointer"
-              type="button"
-              disabled={isBusy}
-              onClick={() => void handleDetectUsabilityIssues()}
-            >
-              {isDetectingUsability ? "Checking..." : "Detect Issues"}
-            </button>
-            <button
-              className="inline-flex items-center justify-center rounded-full bg-sky-100 px-4 py-2 text-sm font-medium text-slate-800 transition hover:-translate-y-0.5 hover:bg-sky-200 cursor-pointer"
-              type="button"
-              onClick={() => setPrompt("")}
-            >
-              Reset
+              {prompt ? "Generate Revision" : "Audit Page"}
             </button>
           </div>
         </form>
@@ -1592,7 +1447,7 @@ export function CommandPanel({
         ) : null}
 
         {/* ── Saved enhancements ── */}
-        <section className="grid gap-3">
+        <section className="grid gap-3" data-testid="agent-history">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-semibold tracking-tight text-slate-950">
               Saved versions
