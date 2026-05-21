@@ -31,3 +31,10 @@ web-ext.config.ts
 *.json
 *.html
 .eval/*
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

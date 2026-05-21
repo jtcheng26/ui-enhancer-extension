@@ -23,6 +23,7 @@ export async function initializeContentPrototype(ctx: ContentScriptContext) {
   );
   augmentationEngine.observePersistedAugmentations();
   const floatingPopup = new FloatingPopupController(ctx, augmentationEngine);
+  floatingPopup.open()
 
   const highlighter = new HoverHighlighter({
     overlay,

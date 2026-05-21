@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "postinstall": "wxt prepare",
     "eval:bundle": "pnpm exec esbuild src/services/eval.ts --bundle --platform=node --format=esm --outfile=.eval/eval.mjs --loader:.html=text --loader:.txt=text --tsconfig-raw='{\"compilerOptions\":{\"baseUrl\":\".\",\"paths\":{\"@/*\":[\"src/*\"]}}}'",
-    "eval": "pnpm run eval:bundle && node scripts/run-eval.mjs"
+    "eval": "pnpm run eval:bundle && node scripts/run-eval.mjs",
+    "test": "playwright test --project=chromium",
+    "test:ui": "playwright test --ui --project=chromium"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.52",
@@ -30,7 +32,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.2.2",
+    "@types/node": "^25.9.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@wxt-dev/module-react": "^1.1.5",
