@@ -227,11 +227,11 @@ export class ClientAIProvider implements AIProvider {
     });
     const result = await generateText({
       model: this.openai("gpt-5.4-mini"),
-      // providerOptions: {
-      //   openai: {
-      //     reasoningEffort: "low",
-      //   },
-      // },
+      providerOptions: {
+        openai: {
+          reasoningEffort: "low",
+        },
+      },
       system: systemPrompt,
       messages: [
         {
@@ -337,27 +337,28 @@ export class ClientAIProvider implements AIProvider {
       prompt: input.prompt,
     });
 
-    // const result = await generateText({
-    //   model: this.openai("gpt-5.4-mini"),
-    //   providerOptions: {
-    //     openai: {
-    //       strictJsonSchema: false,
-    //     },
-    //   },
-    //   output: Output.object({
-    //     schema: LLMSimpleDOMExtractorSpecSchema,
-    //   }),
-    //   system: promptSystem,
-    //   prompt: promptUser,
-    // });
-
-    const result = {
-      output: {
-        fields: {
-          timer: { type: "text", selector: "div.rounded-full > span" },
+    const result = await generateText({
+      model: this.openai("gpt-5.4-mini"),
+      providerOptions: {
+        openai: {
+          strictJsonSchema: false,
+          reasoningEffort: "low",
         },
       },
-    };
+      output: Output.object({
+        schema: LLMSimpleDOMExtractorSpecSchema,
+      }),
+      system: promptSystem,
+      prompt: promptUser,
+    });
+
+    // const result = {
+    //   output: {
+    //     fields: {
+    //       timer: { type: "text", selector: "div.rounded-full > span" },
+    //     },
+    //   },
+    // };
 
     return {
       root: {

@@ -146,9 +146,9 @@ export function CommandPanel({
   const isBusy = generationStep !== null || isDetectingUsability;
   const [requestSettings, setRequestSettings] = useState<RequestSettings>({
     strategy: "markup",
-    useUsabilityRules: true,
+    useUsabilityRules: false,
   });
-  const [settingsOpen, setSettingsOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [
     internalUsabilityGenerationQueue,
     setInternalUsabilityGenerationQueue,
