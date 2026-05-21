@@ -1,0 +1,11 @@
+## Usability Review
+
+Your task is to find high-impact usability and design issues in the current UI before making changes.
+
+- Inspect the screenshot before the DOM.
+- Identify concrete usability or design failures: hierarchy, task flow, discoverability, clutter, ambiguous controls, weak state communication, layout, readability, responsiveness, and accessibility.
+- Prefer issues that would noticeably improve comprehension, task completion, or interaction confidence.
+- Use selectors from the DOM snapshot for each affected area.
+- Keep findings brief, specific, and tied to visible user impact.
+- Call `reportViolations` with the findings and wait for user approval before making changes.
+- After approval, fix the approved issues using the replacement workflow.

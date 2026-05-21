@@ -24,6 +24,7 @@ import type {
   PersistedAugmentation,
   SchemaDiscoveryResult,
   SelectedElement,
+  UiGenerationAgentMode,
   UiGenerationAgentResponse,
   UsabilityGenerationTask,
   UsabilityViolation,
@@ -89,6 +90,11 @@ interface AgentWorkflowState {
   violations: UsabilityViolation[];
 }
 
+interface ActiveAgentRequest {
+  prompt: string;
+  mode: UiGenerationAgentMode;
+}
+
 const STRATEGY_OPTIONS: {
   value: AugmentationStrategy;
   label: string;
@@ -116,6 +122,7 @@ const STRATEGY_OPTIONS: {
 ];
 
 const USE_EXAMPLE_VIOLATIONS_FOR_ACKNOWLEDGEMENT = false;
+const DEFAULT_AGENT_AUDIT_PROMPT = "Fix usability and design issues in the UI";
 
 function isAncestorSelector(ancestor: string, descendant: string) {
   return ancestor !== descendant && descendant.startsWith(`${ancestor} > `);
@@ -174,6 +181,7 @@ export function CommandPanel({
     setInternalActiveUsabilityGenerationTaskId,
   ] = useState<string | null>(null);
   const submissionVersionRef = useRef(0);
+  const activeAgentRequestRef = useRef<ActiveAgentRequest | null>(null);
 
   const isPopup = surface === "popup";
   const isFloating = mode === "floating";
@@ -384,6 +392,19 @@ export function CommandPanel({
     return getUsabilityDetectionContext();
   }
 
+  function getAgentRequest(): ActiveAgentRequest {
+    const trimmedPrompt = prompt.trim();
+
+    return {
+      prompt: trimmedPrompt || DEFAULT_AGENT_AUDIT_PROMPT,
+      mode: trimmedPrompt ? "revision" : "audit",
+    };
+  }
+
+  function getActiveAgentRequest(): ActiveAgentRequest {
+    return activeAgentRequestRef.current ?? getAgentRequest();
+  }
+
   async function renderDraftAndCaptureScreenshot(
     extractor: DOMExtractorSpec,
     spec: string,
@@ -435,7 +456,7 @@ export function CommandPanel({
 
           if (!parsed.data) {
             response = await runUiGenerationAgent({
-              prompt: prompt.trim(),
+              ...getActiveAgentRequest(),
               source: surface,
               messages: response.messages,
               extractorResult: {
@@ -470,7 +491,7 @@ export function CommandPanel({
           setGenerationStep({ phase: "agent-preview", data: parsed.data });
 
           response = await runUiGenerationAgent({
-            prompt: prompt.trim(),
+            ...getActiveAgentRequest(),
             source: surface,
             messages: response.messages,
             extractorResult: {
@@ -500,7 +521,7 @@ export function CommandPanel({
             );
 
             response = await runUiGenerationAgent({
-              prompt: prompt.trim(),
+              ...getActiveAgentRequest(),
               source: surface,
               messages: draftRenderRequest.messages,
               draftRenderResult: {
@@ -513,7 +534,7 @@ export function CommandPanel({
             });
           } catch (error) {
             response = await runUiGenerationAgent({
-              prompt: prompt.trim(),
+              ...getActiveAgentRequest(),
               source: surface,
               messages: draftRenderRequest.messages,
               draftRenderResult: {
@@ -555,12 +576,14 @@ export function CommandPanel({
           updatePendingAugmentationId(injectedAugmentation?.id ?? null);
           void disableSelectionModeIfEnabled();
           setAgentWorkflow(null);
+          activeAgentRequestRef.current = null;
           setGenerationStep(null);
           return Boolean(injectedAugmentation?.id);
         }
         case "done": {
           setUsabilityStatusMessage(response.text || "The agent finished.");
           setAgentWorkflow(null);
+          activeAgentRequestRef.current = null;
           setGenerationStep(null);
           return false;
         }
@@ -568,6 +591,7 @@ export function CommandPanel({
           logger.error("UI generation agent failed.", response.error);
           setUsabilityStatusMessage(response.error);
           setAgentWorkflow(null);
+          activeAgentRequestRef.current = null;
           setGenerationStep(null);
           return false;
         }
@@ -576,21 +600,22 @@ export function CommandPanel({
 
     setUsabilityStatusMessage("The agent stopped before producing a preview.");
     setAgentWorkflow(null);
+    activeAgentRequestRef.current = null;
     setGenerationStep(null);
     return false;
   }
 
   async function handleRunAgentWorkflow() {
-    if (!prompt.trim()) {
-      return;
-    }
-
     await clearUsabilityReview();
     setAgentWorkflow(null);
 
     const submissionVersion = submissionVersionRef.current + 1;
     submissionVersionRef.current = submissionVersion;
-    setGenerationStep({ phase: "agent-audit" });
+    const agentRequest = getAgentRequest();
+    activeAgentRequestRef.current = agentRequest;
+    setGenerationStep({
+      phase: agentRequest.mode === "audit" ? "agent-audit" : "agent-extractor",
+    });
 
     try {
       const context = await getAgentDetectionContext();
@@ -603,7 +628,7 @@ export function CommandPanel({
       }
 
       const response = await runUiGenerationAgent({
-        prompt: prompt.trim(),
+        ...agentRequest,
         source: surface,
         snapshot: context.snapshot,
         screenshot: context.screenshot,
@@ -641,7 +666,7 @@ export function CommandPanel({
 
     try {
       const response = await runUiGenerationAgent({
-        prompt: prompt.trim(),
+        ...getActiveAgentRequest(),
         source: surface,
         messages: activeAgentWorkflow.messages,
         approval: {
@@ -682,6 +707,7 @@ export function CommandPanel({
     submissionVersionRef.current += 1;
     setGenerationStep(null);
     setAgentWorkflow(null);
+    activeAgentRequestRef.current = null;
     updateUsabilityGenerationQueue([]);
     updateActiveUsabilityGenerationTaskId(null);
   }
@@ -873,6 +899,7 @@ export function CommandPanel({
 
   async function handleCancelUsabilityIssues() {
     setAgentWorkflow(null);
+    activeAgentRequestRef.current = null;
     await clearUsabilityReview();
   }
 

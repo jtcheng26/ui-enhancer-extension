@@ -135,8 +135,11 @@ export interface UiGenerationAgentDraftRenderResult {
   error?: string;
 }
 
+export type UiGenerationAgentMode = "audit" | "revision";
+
 export interface UiGenerationAgentCommandPayload {
   prompt: string;
+  mode?: UiGenerationAgentMode;
   source: AugmentationRequest["source"];
   snapshot?: SelectedDomTreeSnapshot;
   screenshot?: string;

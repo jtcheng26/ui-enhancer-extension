@@ -1,6 +1,7 @@
 import {
   AugmentationRequest,
   UiGenerationAgentCommandPayload,
+  UiGenerationAgentMode,
   UiGenerationAgentResponse,
   UsabilityViolation,
 } from "@/types";
@@ -35,6 +36,8 @@ import uiPromptUser from "../prompts/generate-ui-user.txt?raw";
 import markupPromptSystem from "../prompts/markup-system.txt?raw";
 import markupPromptUser from "../prompts/markup-user.txt?raw";
 import agentPromptSystem from "../prompts/agent-system.txt?raw";
+import agentAuditPromptSystem from "../prompts/agent-audit-system.txt?raw";
+import agentRevisionPromptSystem from "../prompts/agent-revision-system.txt?raw";
 import { jsonRenderSystemPrompt } from "../ui/prompt";
 import ExampleMarkup from "@/schema/markup.txt?raw";
 
@@ -58,6 +61,7 @@ const MAX_PROMPT_STRING_LENGTH = 240;
 const MAX_PROMPT_ARRAY_ITEMS = 8;
 const MAX_PROMPT_OBJECT_KEYS = 24;
 const MAX_AGENT_DRAFT_RENDERS = 3;
+const DEFAULT_AGENT_AUDIT_PROMPT = "Fix usability and design issues in the UI";
 
 function clipPromptString(value: string): string {
   return value.length <= MAX_PROMPT_STRING_LENGTH
@@ -243,9 +247,10 @@ function normalizeAgentViolations(
 function createAgentUserMessage(
   input: UiGenerationAgentCommandPayload,
 ): ModelMessage {
+  const prompt = input.prompt.trim() || DEFAULT_AGENT_AUDIT_PROMPT;
   const text = [
     "User request:",
-    input.prompt.trim(),
+    prompt,
     "",
     "Current page DOM snapshot:",
     input.snapshot?.prompt ?? "(No DOM snapshot was available.)",
@@ -271,6 +276,21 @@ function createAgentUserMessage(
         : []),
     ],
   };
+}
+
+function getAgentMode(input: UiGenerationAgentCommandPayload) {
+  const prompt = input.prompt.trim();
+  return (
+    input.mode ??
+    (prompt && prompt !== DEFAULT_AGENT_AUDIT_PROMPT ? "revision" : "audit")
+  );
+}
+
+function getAgentInstructions(mode: UiGenerationAgentMode) {
+  return [
+    mode === "audit" ? agentAuditPromptSystem : agentRevisionPromptSystem,
+    agentPromptSystem,
+  ].join("\n\n");
 }
 
 function getMessageParts(message: ModelMessage): any[] {
@@ -453,6 +473,17 @@ function getAgentToolControls(input: UiGenerationAgentCommandPayload): {
       };
 } {
   if (!input.messages) {
+    if (getAgentMode(input) === "revision") {
+      return {
+        stage: "extractor",
+        activeTools: ["createExtractor"],
+        toolChoice: {
+          type: "tool",
+          toolName: "createExtractor",
+        },
+      };
+    }
+
     return {
       stage: "audit",
       activeTools: ["reportViolations"],
@@ -549,15 +580,16 @@ export class ClientAIProvider implements AIProvider {
 
   private createUiGenerationAgent(
     options: ReturnType<typeof getAgentToolControls>,
+    mode: UiGenerationAgentMode,
   ) {
     return new ToolLoopAgent({
       id: "ui-generation-agent",
       model: this.openai("gpt-5.4-mini"),
-      instructions: agentPromptSystem,
+      instructions: getAgentInstructions(mode),
       providerOptions: {
         openai: {
           parallelToolCalls: false,
-          reasoningEffort: "low",
+          reasoningEffort: "medium",
         },
       },
       stopWhen: stepCountIs(15),
@@ -663,6 +695,7 @@ export class ClientAIProvider implements AIProvider {
 
     const result = await this.createUiGenerationAgent(
       getAgentToolControls(input),
+      getAgentMode(input),
     ).generate({
       messages,
     });
