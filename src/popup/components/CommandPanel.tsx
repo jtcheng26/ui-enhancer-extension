@@ -23,6 +23,7 @@ import type {
   PersistedAugmentation,
   SchemaDiscoveryResult,
   SelectedElement,
+  UiGenerationAgentCssInjection,
   UiGenerationAgentMode,
   UiGenerationAgentResponse,
   UsabilityGenerationTask,
@@ -45,6 +46,11 @@ import {
   withElementsHidden,
 } from "@/services/dom-inspection-service";
 import { RenderSystemId } from "@/services/renderer/renderer";
+import {
+  appendAgentRunLog,
+  startAgentRunLog,
+  type AgentRunLog,
+} from "@/services/agent-run-log";
 
 interface CommandPanelProps {
   surface: "popup" | "sidepanel";
@@ -93,6 +99,20 @@ interface ActiveAgentRequest {
   prompt: string;
   mode: UiGenerationAgentMode;
 }
+
+type AgentGeneratedArtifact =
+  | {
+      kind: "ui";
+      augmentationId?: string;
+      extractor: DOMExtractorSpec;
+      uiSpec: string;
+      css?: UiGenerationAgentCssInjection;
+    }
+  | {
+      kind: "css";
+      augmentationId?: string;
+      css: UiGenerationAgentCssInjection;
+    };
 
 const STRATEGY_OPTIONS: {
   value: AugmentationStrategy;
@@ -183,6 +203,10 @@ export function CommandPanel({
   ] = useState<string | null>(null);
   const submissionVersionRef = useRef(0);
   const activeAgentRequestRef = useRef<ActiveAgentRequest | null>(null);
+  const agentRunLogRef = useRef<AgentRunLog | null>(null);
+  const injectedAgentArtifactsRef = useRef<
+    Record<string, AgentGeneratedArtifact>
+  >({});
 
   const isPopup = surface === "popup";
   const isFloating = mode === "floating";
@@ -197,6 +221,10 @@ export function CommandPanel({
 
   function updatePendingAugmentationId(id: string | null) {
     onPendingAugmentationChange?.(id);
+  }
+
+  function logAgentStep(type: string, payload?: unknown) {
+    appendAgentRunLog(agentRunLogRef.current, type, payload);
   }
 
   function updateUsabilityGenerationQueue(tasks: UsabilityGenerationTask[]) {
@@ -455,12 +483,32 @@ export function CommandPanel({
       iterationCount += 1;
 
       if (submissionVersion !== submissionVersionRef.current) {
+        logAgentStep("run_stale", {
+          status: response.status,
+          submissionVersion,
+          currentVersion: submissionVersionRef.current,
+        });
         return false;
       }
 
+      logAgentStep("agent_response", {
+        status: response.status,
+        iteration: iterationCount,
+      });
+
       switch (response.status) {
         case "needsApproval": {
+          logAgentStep("violations_detected", {
+            count: response.violations.length,
+            violations: response.violations,
+            skippedApproval: skipApprovals,
+          });
+
           if (skipApprovals) {
+            logAgentStep("approval_skipped", {
+              approvalId: response.approvalId,
+              toolCallId: response.toolCallId,
+            });
             setGenerationStep({ phase: "agent-extractor" });
             response = await runUiGenerationAgent({
               ...getActiveAgentRequest(),
@@ -487,9 +535,18 @@ export function CommandPanel({
         }
         case "needsExtractorResult": {
           setGenerationStep({ phase: "agent-extractor" });
+          logAgentStep("extractor_generated", {
+            toolCallId: response.toolCallId,
+            extractor: response.extractor,
+          });
           const parsed = validateAndParse(response.extractor);
 
           if (!parsed.data) {
+            logAgentStep("extractor_validation_failed", {
+              toolCallId: response.toolCallId,
+              extractor: response.extractor,
+              errors: parsed.errors,
+            });
             response = await runUiGenerationAgent({
               ...getActiveAgentRequest(),
               source: surface,
@@ -524,6 +581,15 @@ export function CommandPanel({
               : ["", undefined, undefined];
 
           setGenerationStep({ phase: "agent-preview", data: parsed.data });
+          logAgentStep("extractor_validation_succeeded", {
+            toolCallId: response.toolCallId,
+            extractor: response.extractor,
+            data: parsed.data,
+            rootSelector: rootSelectedElement?.selector,
+            screenshotAvailable: Boolean(rootScreenshot),
+            snapshotAvailable: Boolean(rootSnapshot),
+            markupContextAvailable: Boolean(markupContext),
+          });
 
           response = await runUiGenerationAgent({
             ...getActiveAgentRequest(),
@@ -547,6 +613,22 @@ export function CommandPanel({
             draftRenderRequest.kind === "ui"
               ? validateAndParse(draftRenderRequest.extractor)
               : null;
+          logAgentStep("draft_requested", {
+            toolCallId: draftRenderRequest.toolCallId,
+            kind: draftRenderRequest.kind,
+            extractor:
+              draftRenderRequest.kind === "ui"
+                ? draftRenderRequest.extractor
+                : undefined,
+            uiSpec:
+              draftRenderRequest.kind === "ui"
+                ? draftRenderRequest.spec
+                : undefined,
+            css:
+              draftRenderRequest.kind === "css"
+                ? draftRenderRequest.css
+                : undefined,
+          });
           setGenerationStep({
             phase: "agent-preview",
             data: parsed?.data ?? undefined,
@@ -563,6 +645,13 @@ export function CommandPanel({
                     draftRenderRequest.extractor,
                     draftRenderRequest.spec,
                   );
+
+            logAgentStep("draft_rendered", {
+              toolCallId: draftRenderRequest.toolCallId,
+              kind: draftRenderRequest.kind,
+              screenshotAvailable: Boolean(screenshot),
+              screenshotLength: screenshot.length,
+            });
 
             response = await runUiGenerationAgent({
               ...getActiveAgentRequest(),
@@ -588,6 +677,12 @@ export function CommandPanel({
               },
             });
           } catch (error) {
+            logAgentStep("draft_render_failed", {
+              toolCallId: draftRenderRequest.toolCallId,
+              kind: draftRenderRequest.kind,
+              error:
+                error instanceof Error ? error.message : "Draft rendering failed.",
+            });
             response = await runUiGenerationAgent({
               ...getActiveAgentRequest(),
               source: surface,
@@ -620,11 +715,25 @@ export function CommandPanel({
         }
         case "readyToInject": {
           setGenerationStep({ phase: "agent-ui" });
+          const finalArtifact: AgentGeneratedArtifact = {
+            kind: "ui",
+            extractor: response.extractor,
+            uiSpec: response.spec,
+            css: response.css,
+          };
+          logAgentStep("final_ui_spec_generated", {
+            toolCallId: response.toolCallId,
+            artifact: finalArtifact,
+          });
 
           if (!augmentationEngine) {
             setUsabilityStatusMessage(
               "The agent finished, but the augmentation engine was not available.",
             );
+            logAgentStep("injection_failed", {
+              reason: "augmentation_engine_unavailable",
+              kind: "ui",
+            });
             setGenerationStep(null);
             return false;
           }
@@ -643,11 +752,35 @@ export function CommandPanel({
           );
 
           if (submissionVersion !== submissionVersionRef.current) {
+            logAgentStep("run_stale_after_injection", {
+              kind: "ui",
+              injectedAugmentationId: injectedAugmentation?.id,
+              submissionVersion,
+              currentVersion: submissionVersionRef.current,
+            });
             return false;
           }
 
           updatePendingAugmentationId(injectedAugmentation?.id ?? null);
           void disableSelectionModeIfEnabled();
+          const injectedArtifact = injectedAugmentation?.id
+            ? {
+                ...finalArtifact,
+                augmentationId: injectedAugmentation.id,
+              }
+            : finalArtifact;
+
+          if (injectedAugmentation?.id) {
+            injectedAgentArtifactsRef.current[injectedAugmentation.id] =
+              injectedArtifact;
+          }
+
+          logAgentStep("injected", {
+            kind: "ui",
+            augmentationId: injectedAugmentation?.id,
+            persistedImmediately: skipApprovals,
+            artifact: injectedArtifact,
+          });
 
           if (skipApprovals && injectedAugmentation?.id) {
             await persistAugmentationPreview(injectedAugmentation.id);
@@ -661,11 +794,23 @@ export function CommandPanel({
         }
         case "readyToInjectCss": {
           setGenerationStep({ phase: "agent-ui" });
+          const finalArtifact: AgentGeneratedArtifact = {
+            kind: "css",
+            css: response.css,
+          };
+          logAgentStep("final_css_generated", {
+            toolCallId: response.toolCallId,
+            artifact: finalArtifact,
+          });
 
           if (!augmentationEngine) {
             setUsabilityStatusMessage(
               "The agent finished, but the augmentation engine was not available.",
             );
+            logAgentStep("injection_failed", {
+              reason: "augmentation_engine_unavailable",
+              kind: "css",
+            });
             setGenerationStep(null);
             return false;
           }
@@ -679,11 +824,35 @@ export function CommandPanel({
           );
 
           if (submissionVersion !== submissionVersionRef.current) {
+            logAgentStep("run_stale_after_injection", {
+              kind: "css",
+              injectedAugmentationId: injectedAugmentation?.id,
+              submissionVersion,
+              currentVersion: submissionVersionRef.current,
+            });
             return false;
           }
 
           updatePendingAugmentationId(injectedAugmentation?.id ?? null);
           void disableSelectionModeIfEnabled();
+          const injectedArtifact = injectedAugmentation?.id
+            ? {
+                ...finalArtifact,
+                augmentationId: injectedAugmentation.id,
+              }
+            : finalArtifact;
+
+          if (injectedAugmentation?.id) {
+            injectedAgentArtifactsRef.current[injectedAugmentation.id] =
+              injectedArtifact;
+          }
+
+          logAgentStep("injected", {
+            kind: "css",
+            augmentationId: injectedAugmentation?.id,
+            persistedImmediately: skipApprovals,
+            artifact: injectedArtifact,
+          });
 
           if (skipApprovals && injectedAugmentation?.id) {
             await persistAugmentationPreview(injectedAugmentation.id);
@@ -697,6 +866,9 @@ export function CommandPanel({
         }
         case "done": {
           setUsabilityStatusMessage(response.text || "The agent finished.");
+          logAgentStep("run_done", {
+            text: response.text,
+          });
           setAgentWorkflow(null);
           activeAgentRequestRef.current = null;
           setGenerationStep(null);
@@ -705,6 +877,9 @@ export function CommandPanel({
         case "error": {
           logger.error("UI generation agent failed.", response.error);
           setUsabilityStatusMessage(response.error);
+          logAgentStep("run_error", {
+            error: response.error,
+          });
           setAgentWorkflow(null);
           activeAgentRequestRef.current = null;
           setGenerationStep(null);
@@ -714,6 +889,10 @@ export function CommandPanel({
     }
 
     setUsabilityStatusMessage("The agent stopped before producing a preview.");
+    logAgentStep("run_stopped", {
+      reason: "iteration_limit_or_empty_response",
+      iterations: iterationCount,
+    });
     setAgentWorkflow(null);
     activeAgentRequestRef.current = null;
     setGenerationStep(null);
@@ -728,6 +907,18 @@ export function CommandPanel({
     submissionVersionRef.current = submissionVersion;
     const agentRequest = getAgentRequest();
     activeAgentRequestRef.current = agentRequest;
+    injectedAgentArtifactsRef.current = {};
+    agentRunLogRef.current = startAgentRunLog({
+      prompt: agentRequest.prompt,
+      mode: agentRequest.mode,
+      source: surface,
+      options: {
+        skipApprovals,
+        useUsabilityRules: requestSettings.useUsabilityRules,
+        selectedElementSelector: selectedElement?.selector,
+        selectedElementPageUrl: selectedElement?.pageUrl,
+      },
+    });
     setGenerationStep({
       phase: agentRequest.mode === "audit" ? "agent-audit" : "agent-extractor",
     });
@@ -739,8 +930,16 @@ export function CommandPanel({
         setUsabilityStatusMessage(
           "The agent could not inspect the current page.",
         );
+        logAgentStep("context_capture_failed");
         return false;
       }
+
+      logAgentStep("context_captured", {
+        screenshotAvailable: Boolean(context.screenshot),
+        screenshotLength: context.screenshot.length,
+        snapshotSelector: context.snapshot.selector,
+        pageUrl: context.snapshot.pageUrl,
+      });
 
       const response = await runUiGenerationAgent({
         ...agentRequest,
@@ -755,6 +954,9 @@ export function CommandPanel({
       setUsabilityStatusMessage(
         error instanceof Error ? error.message : "The agent workflow failed.",
       );
+      logAgentStep("run_exception", {
+        error: error instanceof Error ? error.message : "The agent workflow failed.",
+      });
       return false;
     } finally {
       if (submissionVersion === submissionVersionRef.current) {
@@ -778,6 +980,10 @@ export function CommandPanel({
     setUsabilityStatusMessage(null);
     await clearUsabilityViolationHighlights();
     setGenerationStep({ phase: "agent-extractor" });
+    logAgentStep("approval_submitted", {
+      approvalId: activeAgentWorkflow.approvalId,
+      violations: activeAgentWorkflow.violations,
+    });
 
     try {
       const response = await runUiGenerationAgent({
@@ -799,6 +1005,12 @@ export function CommandPanel({
           ? error.message
           : "The agent workflow could not continue.",
       );
+      logAgentStep("approval_continue_failed", {
+        error:
+          error instanceof Error
+            ? error.message
+            : "The agent workflow could not continue.",
+      });
     } finally {
       if (submissionVersion === submissionVersionRef.current) {
         setGenerationStep(null);
@@ -819,6 +1031,7 @@ export function CommandPanel({
   }
 
   function handleCancelLoading() {
+    logAgentStep("run_cancelled");
     submissionVersionRef.current += 1;
     setGenerationStep(null);
     setAgentWorkflow(null);
@@ -1013,6 +1226,10 @@ export function CommandPanel({
   }
 
   async function handleCancelUsabilityIssues() {
+    logAgentStep("approval_cancelled", {
+      approvalId: agentWorkflow?.approvalId,
+      violations: usabilityReview?.violations,
+    });
     setAgentWorkflow(null);
     activeAgentRequestRef.current = null;
     await clearUsabilityReview();
@@ -1020,11 +1237,16 @@ export function CommandPanel({
 
   async function persistAugmentationPreview(augmentationId: string) {
     if (!augmentationEngine) return;
+    const artifact = injectedAgentArtifactsRef.current[augmentationId];
 
     await augmentationEngine.persistAugmentation(augmentationId);
     await refreshPersistedAugmentations();
     updatePendingAugmentationId(null);
     completeActiveUsabilityGenerationTask();
+    logAgentStep("augmentation_persisted", {
+      augmentationId,
+      artifact,
+    });
   }
 
   async function handleConfirmAugmentation() {
@@ -1035,8 +1257,13 @@ export function CommandPanel({
 
   async function handleDeletePreviewAugmentation() {
     if (!augmentationEngine || !pendingAugmentationId) return;
+    const artifact = injectedAgentArtifactsRef.current[pendingAugmentationId];
 
     augmentationEngine.remove(pendingAugmentationId);
+    logAgentStep("augmentation_discarded", {
+      augmentationId: pendingAugmentationId,
+      artifact,
+    });
     updatePendingAugmentationId(null);
     completeActiveUsabilityGenerationTask();
   }
