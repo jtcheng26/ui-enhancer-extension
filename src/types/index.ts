@@ -128,8 +128,10 @@ export interface UiGenerationAgentExtractorResult {
 
 export interface UiGenerationAgentDraftRenderResult {
   toolCallId: string;
-  extractor: DOMExtractorSpec;
-  spec: string;
+  kind?: "ui" | "css";
+  extractor?: DOMExtractorSpec;
+  spec?: string;
+  css?: UiGenerationAgentCssInjection;
   success: boolean;
   screenshot?: string;
   error?: string;
@@ -171,8 +173,16 @@ export type UiGenerationAgentResponse =
       status: "needsDraftRender";
       messages: ModelMessage[];
       toolCallId: string;
+      kind: "ui";
       extractor: DOMExtractorSpec;
       spec: string;
+    }
+  | {
+      status: "needsDraftRender";
+      messages: ModelMessage[];
+      toolCallId: string;
+      kind: "css";
+      css: UiGenerationAgentCssInjection;
     }
   | {
       status: "readyToInject";
@@ -180,6 +190,13 @@ export type UiGenerationAgentResponse =
       toolCallId: string;
       extractor: DOMExtractorSpec;
       spec: string;
+      css?: UiGenerationAgentCssInjection;
+    }
+  | {
+      status: "readyToInjectCss";
+      messages: ModelMessage[];
+      toolCallId: string;
+      css: UiGenerationAgentCssInjection;
     }
   | {
       status: "done";
@@ -208,24 +225,39 @@ export interface DomQueryElement {
 
 export interface InjectedAugmentation {
   id: string;
-  kind: "placeholder-card" | "button" | "overlay";
+  kind: "placeholder-card" | "button" | "overlay" | "css";
   label: string;
   containerId: string;
   createdAt: string;
   status: "injected" | "removed";
 }
 
-export interface PersistedAugmentation {
+interface PersistedAugmentationBase {
   id: string;
   label: string;
   pageUrl: string;
   enabled: boolean;
-  extractor: DOMExtractorSpec;
-  spec: string;
-  renderSystemId: RenderSystemId;
+  kind?: "ui" | "css";
+  rootSelector?: string;
+  css?: string;
   createdAt: string;
   updatedAt: string;
 }
+
+export type PersistedAugmentation =
+  | (PersistedAugmentationBase & {
+      kind?: "ui";
+      extractor: DOMExtractorSpec;
+      spec: string;
+      renderSystemId: RenderSystemId;
+    })
+  | (PersistedAugmentationBase & {
+      kind: "css";
+      extractor?: never;
+      spec?: never;
+      renderSystemId?: never;
+      css: string;
+    });
 
 export interface PersistedAugmentationStore {
   list(): Promise<PersistedAugmentation[]>;
@@ -236,6 +268,12 @@ export interface PersistedAugmentationStore {
   ): Promise<PersistedAugmentation | null>;
   remove(id: string): Promise<void>;
   clear(): Promise<void>;
+}
+
+export interface UiGenerationAgentCssInjection {
+  rootSelector?: string;
+  label?: string;
+  css: string;
 }
 
 export interface ParsedSchema {

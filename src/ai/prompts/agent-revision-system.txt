@@ -6,4 +6,4 @@ Your task is to implement the user's requested UI change.
 - Choose the smallest replacement root that can satisfy the request without breaking the surrounding page.
 - Preserve the page's existing intent, data, navigation, form behavior, and key actions unless the request explicitly changes them.
 - Follow the host page's visual language unless the request asks for a different style.
-- Implement the requested change using the replacement workflow.
+- Prefer CSS when the request can be handled by styling existing elements; use UI replacement only when the request needs new structure, reorganized content, or rebuilt interactions.

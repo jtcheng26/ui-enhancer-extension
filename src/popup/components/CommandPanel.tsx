@@ -420,6 +420,24 @@ export function CommandPanel({
       (element) =>
         runWithUiHidden
           ? runWithUiHidden(() => screenshotElement(element, { quality: 0.92 }))
+      : screenshotElement(element, { quality: 0.92 }),
+    );
+  }
+
+  async function renderCssDraftAndCaptureScreenshot(
+    rootSelector: string,
+    css: string,
+  ) {
+    if (!augmentationEngine) {
+      throw new Error("The augmentation engine was not available.");
+    }
+
+    return augmentationEngine.renderCssDraftForScreenshot(
+      css,
+      rootSelector,
+      (element) =>
+        runWithUiHidden
+          ? runWithUiHidden(() => screenshotElement(element, { quality: 0.92 }))
           : screenshotElement(element, { quality: 0.92 }),
     );
   }
@@ -508,17 +526,26 @@ export function CommandPanel({
         }
         case "needsDraftRender": {
           const draftRenderRequest = response;
-          const parsed = validateAndParse(draftRenderRequest.extractor);
+          const parsed =
+            draftRenderRequest.kind === "ui"
+              ? validateAndParse(draftRenderRequest.extractor)
+              : null;
           setGenerationStep({
             phase: "agent-preview",
-            data: parsed.data ?? undefined,
+            data: parsed?.data ?? undefined,
           });
 
           try {
-            const screenshot = await renderDraftAndCaptureScreenshot(
-              draftRenderRequest.extractor,
-              draftRenderRequest.spec,
-            );
+            const screenshot =
+              draftRenderRequest.kind === "css"
+                ? await renderCssDraftAndCaptureScreenshot(
+                    draftRenderRequest.css.rootSelector ?? "body",
+                    draftRenderRequest.css.css,
+                  )
+                : await renderDraftAndCaptureScreenshot(
+                    draftRenderRequest.extractor,
+                    draftRenderRequest.spec,
+                  );
 
             response = await runUiGenerationAgent({
               ...getActiveAgentRequest(),
@@ -526,8 +553,19 @@ export function CommandPanel({
               messages: draftRenderRequest.messages,
               draftRenderResult: {
                 toolCallId: draftRenderRequest.toolCallId,
-                extractor: draftRenderRequest.extractor,
-                spec: draftRenderRequest.spec,
+                kind: draftRenderRequest.kind,
+                extractor:
+                  draftRenderRequest.kind === "ui"
+                    ? draftRenderRequest.extractor
+                    : undefined,
+                spec:
+                  draftRenderRequest.kind === "ui"
+                    ? draftRenderRequest.spec
+                    : undefined,
+                css:
+                  draftRenderRequest.kind === "css"
+                    ? draftRenderRequest.css
+                    : undefined,
                 success: true,
                 screenshot,
               },
@@ -539,8 +577,19 @@ export function CommandPanel({
               messages: draftRenderRequest.messages,
               draftRenderResult: {
                 toolCallId: draftRenderRequest.toolCallId,
-                extractor: draftRenderRequest.extractor,
-                spec: draftRenderRequest.spec,
+                kind: draftRenderRequest.kind,
+                extractor:
+                  draftRenderRequest.kind === "ui"
+                    ? draftRenderRequest.extractor
+                    : undefined,
+                spec:
+                  draftRenderRequest.kind === "ui"
+                    ? draftRenderRequest.spec
+                    : undefined,
+                css:
+                  draftRenderRequest.kind === "css"
+                    ? draftRenderRequest.css
+                    : undefined,
                 success: false,
                 error:
                   error instanceof Error
@@ -567,6 +616,43 @@ export function CommandPanel({
             response.extractor,
             response.spec,
             "markup",
+            undefined,
+            response.css
+              ? {
+                  css: response.css.css,
+                  cssRootSelector: response.css.rootSelector,
+                }
+              : undefined,
+          );
+
+          if (submissionVersion !== submissionVersionRef.current) {
+            return false;
+          }
+
+          updatePendingAugmentationId(injectedAugmentation?.id ?? null);
+          void disableSelectionModeIfEnabled();
+          setAgentWorkflow(null);
+          activeAgentRequestRef.current = null;
+          setGenerationStep(null);
+          return Boolean(injectedAugmentation?.id);
+        }
+        case "readyToInjectCss": {
+          setGenerationStep({ phase: "agent-ui" });
+
+          if (!augmentationEngine) {
+            setUsabilityStatusMessage(
+              "The agent finished, but the augmentation engine was not available.",
+            );
+            setGenerationStep(null);
+            return false;
+          }
+
+          const injectedAugmentation = await augmentationEngine.injectCss(
+            response.css.css,
+            {
+              label: response.css.label,
+              rootSelector: response.css.rootSelector,
+            },
           );
 
           if (submissionVersion !== submissionVersionRef.current) {
@@ -1066,9 +1152,9 @@ export function CommandPanel({
           },
           {
             phase: "agent-extractor",
-            label: "Reading live data",
+            label: "Choosing the fix path",
             detail:
-              "Creating and validating the extractor for the replacement section.",
+              "Deciding whether CSS is enough or live data extraction is needed.",
           },
           {
             phase: "agent-preview",
@@ -1078,9 +1164,8 @@ export function CommandPanel({
           },
           {
             phase: "agent-ui",
-            label: "Preparing the preview",
-            detail:
-              "Submitting the revised fragment for preview on the page.",
+            label: "Applying the preview",
+            detail: "Submitting the final UI or CSS preview on the page.",
           },
         ]
       : [
@@ -1562,7 +1647,10 @@ export function CommandPanel({
                     </div>
                   </div>
                   <p className="truncate text-xs text-slate-500">
-                    {item.extractor.root.selector || item.pageUrl}
+                    {item.rootSelector ??
+                      (item.kind === "css"
+                        ? item.pageUrl
+                        : item.extractor.root.selector)}
                   </p>
                 </article>
               ))

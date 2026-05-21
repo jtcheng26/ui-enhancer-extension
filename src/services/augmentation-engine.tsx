@@ -49,11 +49,14 @@ interface MountedAugmentation {
   augmentation: InjectedAugmentation;
   extractor?: DOMExtractorSpec;
   spec?: string;
-  renderSystemId: RenderSystemId;
+  renderSystemId?: RenderSystemId;
+  css?: string;
+  cssRootSelector?: string;
   renderUpdater?: RenderUpdater;
   lastScrapedData?: Record<string, ExtractedValue>;
   originalElement?: HTMLElement;
   renderedElement?: HTMLElement | null;
+  styleElement?: HTMLStyleElement;
   originalDisplay?: string;
   originalAriaHidden?: string | null;
   usesBodyWrapper?: boolean;
@@ -63,6 +66,16 @@ interface MountedAugmentation {
 
 const BODY_CONTENT_WRAPPER_SELECTOR = "[data-aui-body-content-wrapper]";
 const BODY_CONTENT_WRAPPER_COUNT_ATTR = "data-aui-body-content-wrapper-count";
+
+interface CssInjectionOptions {
+  label?: string;
+  rootSelector?: string;
+}
+
+interface UiInjectionOptions {
+  css?: string;
+  cssRootSelector?: string;
+}
 
 function isPlainObject(
   value: unknown,
@@ -162,10 +175,12 @@ export class AugmentationEngine {
     spec: string,
     renderSystemId: RenderSystemId,
     persistedId?: string,
+    options: UiInjectionOptions = {},
   ) {
     const id = persistedId ?? crypto.randomUUID();
     const shadowRootName = `augmentation_${id}`;
     if (document.querySelector(shadowRootName)) return null;
+    if (this.mountedAugmentations.has(id)) return null;
 
     const { data, root: replacedElement } = validateAndParse(extractor);
     if (replacedElement instanceof Document) {
@@ -217,8 +232,13 @@ export class AugmentationEngine {
 
     let ui: ShadowRootContentScriptUi<{ root: ReactDOM.Root }> | undefined;
     let renderUpdater: RenderUpdater | undefined;
+    let styleElement: HTMLStyleElement | undefined;
 
     try {
+      if (options.css) {
+        styleElement = this.mountCssStyle(id, options.css);
+      }
+
       ui = await createShadowRootUi(this.ctx, {
         name: shadowRootName,
         position: "inline",
@@ -243,6 +263,8 @@ export class AugmentationEngine {
       });
       ui.mount();
     } catch (error) {
+      styleElement?.remove();
+
       if (usesBodyWrapper) {
         this.releaseBodyContentWrapper();
       } else {
@@ -284,12 +306,16 @@ export class AugmentationEngine {
         mountAnchor.nextElementSibling instanceof HTMLElement
           ? mountAnchor.nextElementSibling
           : null,
+      css: options.css,
+      cssRootSelector: options.cssRootSelector ?? extractor.root.selector,
+      styleElement,
       originalDisplay,
       originalAriaHidden,
       usesBodyWrapper,
       ui,
       teardown: () => {
         ui?.remove();
+        styleElement?.remove();
       },
     });
     this.injectionOrder.push(augmentation.id);
@@ -301,6 +327,48 @@ export class AugmentationEngine {
       },
     );
     document.getElementById(shadowRootName)?.remove();
+
+    return augmentation;
+  }
+
+  async injectCss(
+    css: string,
+    options: CssInjectionOptions = {},
+    persistedId?: string,
+  ) {
+    const id = persistedId ?? crypto.randomUUID();
+    if (this.mountedAugmentations.has(id)) return null;
+
+    const styleElement = this.mountCssStyle(id, css);
+    const targetElement = options.rootSelector
+      ? this.root.querySelector(options.rootSelector)
+      : null;
+    const augmentation: InjectedAugmentation = {
+      id,
+      kind: "css",
+      label: options.label ?? "CSS styles",
+      containerId: styleElement.id,
+      createdAt: new Date().toISOString(),
+      status: "injected",
+    };
+
+    this.augmentations.set(augmentation.id, augmentation);
+    this.mountedAugmentations.set(augmentation.id, {
+      augmentation,
+      css,
+      cssRootSelector: options.rootSelector,
+      renderedElement:
+        targetElement instanceof HTMLElement ? targetElement : null,
+      styleElement,
+      teardown: () => {
+        styleElement.remove();
+      },
+    });
+    this.injectionOrder.push(augmentation.id);
+    logger.info("Injected CSS augmentation.", {
+      augmentation,
+      selector: options.rootSelector,
+    });
 
     return augmentation;
   }
@@ -376,14 +444,39 @@ export class AugmentationEngine {
     }
   }
 
+  async renderCssDraftForScreenshot<T>(
+    css: string,
+    rootSelector: string,
+    capture: (element: HTMLElement) => Promise<T>,
+  ) {
+    const id = crypto.randomUUID();
+    const styleElement = this.mountCssStyle(`draft-${id}`, css);
+    const targetElement = this.root.querySelector(rootSelector);
+
+    if (!(targetElement instanceof HTMLElement)) {
+      styleElement.remove();
+      throw new Error("Unable to render CSS draft because the selector did not resolve.");
+    }
+
+    try {
+      await waitForDraftRenderPaint();
+      return await capture(targetElement);
+    } finally {
+      styleElement.remove();
+    }
+  }
+
   highlightAugmentation(id: string) {
     const mountedAugmentation = this.mountedAugmentations.get(id);
     const targetElement =
       mountedAugmentation?.renderedElement ??
       mountedAugmentation?.originalElement ??
+      (mountedAugmentation?.cssRootSelector
+        ? this.root.querySelector(mountedAugmentation.cssRootSelector)
+        : null) ??
       null;
 
-    if (!targetElement) {
+    if (!(targetElement instanceof HTMLElement)) {
       this.clearHighlightedAugmentation();
       return false;
     }
@@ -420,9 +513,21 @@ export class AugmentationEngine {
   async persistAugmentation(id: string) {
     const augmentation = this.mountedAugmentations.get(id);
 
-    if (!augmentation?.extractor || !augmentation.spec) {
+    if (!augmentation) {
+      logger.warn("Unable to persist augmentation because it is not mounted.", {
+        id,
+      });
+      return null;
+    }
+
+    if (
+      (!augmentation.extractor ||
+        !augmentation.spec ||
+        !augmentation.renderSystemId) &&
+      !augmentation.css
+    ) {
       logger.warn(
-        "Unable to persist augmentation because it does not have extractor/spec metadata.",
+        "Unable to persist augmentation because it does not have UI or CSS metadata.",
         {
           id,
         },
@@ -430,17 +535,34 @@ export class AugmentationEngine {
       return null;
     }
 
-    const persistedAugmentation: PersistedAugmentation = {
+    const base = {
       id: augmentation.augmentation.id,
       label: augmentation.augmentation.label,
       pageUrl: window.location.href,
       enabled: true,
-      extractor: augmentation.extractor,
-      spec: augmentation.spec,
-      renderSystemId: augmentation.renderSystemId,
+      rootSelector:
+        augmentation.cssRootSelector ?? augmentation.extractor?.root.selector,
       createdAt: augmentation.augmentation.createdAt,
       updatedAt: new Date().toISOString(),
     };
+
+    const persistedAugmentation: PersistedAugmentation =
+      augmentation.extractor &&
+      augmentation.spec &&
+      augmentation.renderSystemId
+        ? {
+            ...base,
+            kind: "ui",
+            extractor: augmentation.extractor,
+            spec: augmentation.spec,
+            renderSystemId: augmentation.renderSystemId,
+            css: augmentation.css,
+          }
+        : {
+            ...base,
+            kind: "css",
+            css: augmentation.css ?? "",
+          };
 
     await this.persistedAugmentationStore.upsert(persistedAugmentation);
     logger.info(
@@ -460,12 +582,28 @@ export class AugmentationEngine {
     const injectedAugmentations: InjectedAugmentation[] = [];
 
     for (const persistedAugmentation of persistedAugmentations) {
-      const injectedAugmentation = await this.inject(
-        persistedAugmentation.extractor,
-        persistedAugmentation.spec,
-        persistedAugmentation.renderSystemId,
-        persistedAugmentation.id,
-      );
+      const injectedAugmentation =
+        persistedAugmentation.kind === "css"
+          ? await this.injectCss(
+              persistedAugmentation.css,
+              {
+                label: persistedAugmentation.label,
+                rootSelector: persistedAugmentation.rootSelector,
+              },
+              persistedAugmentation.id,
+            )
+          : await this.inject(
+              persistedAugmentation.extractor,
+              persistedAugmentation.spec,
+              persistedAugmentation.renderSystemId,
+              persistedAugmentation.id,
+              {
+                css: persistedAugmentation.css,
+                cssRootSelector:
+                  persistedAugmentation.rootSelector ??
+                  persistedAugmentation.extractor.root.selector,
+              },
+            );
 
       if (injectedAugmentation) {
         injectedAugmentations.push(injectedAugmentation);
@@ -544,6 +682,18 @@ export class AugmentationEngine {
 
   list() {
     return Array.from(this.augmentations.values());
+  }
+
+  private mountCssStyle(id: string, css: string) {
+    const styleId = `aui-augmentation-style-${id}`;
+    this.root.getElementById(styleId)?.remove();
+
+    const styleElement = this.root.createElement("style");
+    styleElement.id = styleId;
+    styleElement.setAttribute("data-aui-augmentation-style", id);
+    styleElement.textContent = css;
+    (this.root.head ?? this.root.documentElement).appendChild(styleElement);
+    return styleElement;
   }
 
   remove(id: string) {

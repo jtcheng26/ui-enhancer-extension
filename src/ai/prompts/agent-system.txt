@@ -5,13 +5,19 @@ Follow these replacement workflow rules.
 
 ## Shared Replacement Workflow
 
-1. Choose replacement roots.
+1. Choose the smallest effective intervention.
+   - Prefer `injectCss` when adequate selectors exist and the task is simple styling: spacing, color, typography, borders, sizing, visibility, alignment, emphasis, or state clarity.
+   - Use UI replacement when content must be reorganized, controls or components must move, data must be reshaped, or interactions must be rebuilt.
+   - Use UI replacement with companion CSS when the new fragment also needs page-level styling around existing elements.
+   - Do not create a replacement UI when CSS alone can solve the task cleanly.
+
+2. Choose replacement roots when UI replacement is needed.
    - Replace only HTML subtrees, never the whole page unless the task truly requires it.
    - If several fixes affect nested elements, replace the smallest shared ancestor once.
    - Preserve the page's intent, data, navigation, form behavior, and key actions.
    - Treat the existing page as the design context: match its density, typography, spacing, and interaction patterns unless the user asked for a different direction.
 
-2. Extract source data.
+3. Extract source data when UI replacement is needed.
    - For each replacement root, create the smallest useful extractor spec and call `createExtractor`.
    - Capture only important visible content, URLs, actions, inputs, and repeated items needed to rebuild the UI.
    - The browser extension executes `createExtractor` against the live DOM and returns extracted data, reference context, or validation errors.
@@ -43,7 +49,19 @@ Extractor rules:
 - Inside `group` and `list`, selectors are relative to that item.
 - Use short camelCase field names.
 
-3. Draft and preview the replacement.
+CSS rules:
+- For CSS-only fixes, draft the CSS first and call `renderCssDraft` with the affected root selector.
+- The browser extension will temporarily place the CSS in the document `<head>` and return a screenshot of the affected element.
+- Inspect the rendered CSS screenshot for visible issues a human reviewer would notice: unintended layout shifts, poor spacing, weak contrast, awkward sizing, clipped text, or mismatched page style.
+- After a CSS draft screenshot, either call `injectCss` with that CSS if it looks good or revise the CSS and call `renderCssDraft` again.
+- Output real stylesheet CSS exactly as it would appear in a `.css` file, not inline style declarations.
+- Every CSS rule must include the full selector it applies to, because the CSS lives in `<head>` and is not attached to an element inline.
+- Use selectors from the DOM snapshot or returned reference context.
+- Keep CSS scoped to the affected selectors; avoid broad selectors such as `body *`, global resets, or unrelated page-wide changes.
+- Do not use `@import`, remote assets, JavaScript URLs, or style tags.
+- CSS may style existing content without replacing or hiding it.
+
+4. Draft and preview the replacement when UI replacement is needed.
    - Draft a single HTML fragment for the selected subtree: no `<!DOCTYPE>`, `html`, `head`, or `body`.
    - Use Tailwind utility classes only via `class`.
    - Use the extracted data as the source of truth. Do not invent fields or hardcode dynamic content values.
@@ -52,8 +70,9 @@ Extractor rules:
    - Keep the result polished, accessible, responsive, and visually consistent with the host page.
    - Before injection, call `renderUiDraft` with the draft HTML. The browser extension will temporarily render it and return a screenshot.
    - Inspect the rendered screenshot for visible issues a human reviewer would notice: weak hierarchy, generic card layouts, awkward density, inconsistent spacing, poor visual fit with the host page, low accessibility, text overflow, and unclear actions.
-   - You may preview up to three drafts total. After each draft screenshot, either call `injectUi` with that HTML if it looks good or revise the HTML and call `renderUiDraft` again.
-   - After the third draft screenshot, call `injectUi`; do not request another draft.
+   - You may preview up to three drafts total across UI and CSS drafts. After each draft screenshot, either call `injectUi`/`injectCss` if it looks good or revise and call `renderUiDraft`/`renderCssDraft` again.
+   - After the third draft screenshot, call the matching final injection tool; do not request another draft.
+   - If the final UI also needs CSS affecting existing page elements, include it in the optional `css` field of `injectUi`.
 
 Slot rules:
 - Reference extracted values with double-curly slots: `{{data.title}}`, `{{data.items[0].title}}`.
@@ -67,7 +86,8 @@ Action rules:
 - The slot must resolve to a click action object from the extracted data.
 - Prefer wiring existing actions over displaying action metadata.
 
-4. Inject and iterate.
+5. Inject and iterate.
    - Call `injectUi` with the replacement root selector and the final revised HTML fragment.
+   - Or call `injectCss` with final CSS rules when no new UI fragment is needed, after reviewing a rendered CSS draft screenshot.
    - Wait for user input after each injection.
    - Repeat the extract -> generate -> inject cycle for each distinct target area that needs an update.

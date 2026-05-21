@@ -186,6 +186,13 @@ const agentInjectUiInputSchema = z.object({
     .string()
     .min(1)
     .describe("Single HTML fragment using Tailwind classes and data slots."),
+  css: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Optional companion CSS to save with this UI replacement when page-level styling is also needed.",
+    ),
 });
 
 const agentRenderUiDraftInputSchema = z.object({
@@ -206,6 +213,55 @@ const agentRenderUiDraftInputSchema = z.object({
     .describe("Optional notes about what the draft is trying to improve."),
 });
 
+const agentRenderCssDraftInputSchema = z.object({
+  rootSelector: z
+    .string()
+    .min(1)
+    .describe("Selector for the existing element to screenshot after CSS."),
+  label: z
+    .string()
+    .min(1)
+    .max(80)
+    .optional()
+    .describe("Short label for this CSS augmentation."),
+  css: z
+    .string()
+    .min(1)
+    .describe(
+      "Draft stylesheet CSS to place in the document head. Every rule must include a full selector; do not output inline style declarations.",
+    ),
+  notes: z
+    .string()
+    .max(400)
+    .optional()
+    .describe("Optional notes about what the CSS draft is trying to improve."),
+});
+
+const agentInjectCssInputSchema = z.object({
+  rootSelector: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Optional selector for the main existing element affected."),
+  label: z
+    .string()
+    .min(1)
+    .max(80)
+    .optional()
+    .describe("Short label for this CSS-only augmentation."),
+  css: z
+    .string()
+    .min(1)
+    .describe(
+      "Final stylesheet CSS to place in the document head. Every rule must include a full selector; do not output inline style declarations.",
+    ),
+  notes: z
+    .string()
+    .max(400)
+    .optional()
+    .describe("Optional notes explaining why CSS is sufficient."),
+});
+
 type AgentReportViolationsInput = z.infer<
   typeof agentReportViolationsInputSchema
 >;
@@ -214,10 +270,20 @@ type AgentCreateExtractorInput = z.infer<
   typeof agentCreateExtractorInputSchema
 >;
 
+type AgentInjectUiInput = z.infer<typeof agentInjectUiInputSchema>;
+
+type AgentInjectCssInput = z.infer<typeof agentInjectCssInputSchema>;
+
+type AgentRenderCssDraftInput = z.infer<
+  typeof agentRenderCssDraftInputSchema
+>;
+
 type AgentToolName =
   | "reportViolations"
   | "createExtractor"
   | "renderUiDraft"
+  | "renderCssDraft"
+  | "injectCss"
   | "injectUi";
 
 type AgentToolStage =
@@ -226,7 +292,7 @@ type AgentToolStage =
   | "extractorOrDraft"
   | "draft"
   | "draftOrFinal"
-  | "final"
+  | "finalAny"
   | "free";
 
 function toJsonValue(value: unknown) {
@@ -329,6 +395,13 @@ function countToolCalls(messages: ModelMessage[] | undefined, toolName: string) 
   }, 0);
 }
 
+function countDraftRenderCalls(messages: ModelMessage[] | undefined) {
+  return (
+    countToolCalls(messages, "renderUiDraft") +
+    countToolCalls(messages, "renderCssDraft")
+  );
+}
+
 function extractorFromAgentInput(input: AgentCreateExtractorInput) {
   return {
     root: {
@@ -343,6 +416,74 @@ function stripHtmlCodeFence(value: string): string {
   const trimmed = value.trim();
   const match = trimmed.match(/^```(?:html)?\s*([\s\S]*?)\s*```$/i);
   return match ? match[1].trim() : trimmed;
+}
+
+function stripCssCodeFence(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^```(?:css)?\s*([\s\S]*?)\s*```$/i);
+  return match ? match[1].trim() : trimmed;
+}
+
+function getUnsafeCssReason(css: string): string | null {
+  if (/<\/?style[\s>]/i.test(css)) {
+    return "CSS must contain rules only, not style tags.";
+  }
+
+  if (/@import\b/i.test(css)) {
+    return "CSS must not import remote stylesheets.";
+  }
+
+  if (/javascript:/i.test(css)) {
+    return "CSS must not contain javascript: URLs.";
+  }
+
+  return null;
+}
+
+function cssFromAgentInput(
+  input: Pick<
+    AgentInjectCssInput | AgentRenderCssDraftInput,
+    "css" | "label" | "rootSelector"
+  >,
+) {
+  const css = stripCssCodeFence(input.css);
+  const unsafeReason = getUnsafeCssReason(css);
+
+  if (unsafeReason) {
+    return {
+      error: unsafeReason,
+      css: null,
+    };
+  }
+
+  return {
+    error: null,
+    css: {
+      css,
+      label: input.label,
+      rootSelector: input.rootSelector,
+    },
+  };
+}
+
+function companionCssFromInjectUi(input: AgentInjectUiInput) {
+  if (!input.css) {
+    return {
+      error: null,
+      css: undefined,
+    };
+  }
+
+  const parsed = cssFromAgentInput({
+    css: input.css,
+    rootSelector: input.rootSelector,
+    label: "Companion styles",
+  });
+
+  return {
+    error: parsed.error,
+    css: parsed.css ?? undefined,
+  };
 }
 
 function createExtractorToolResultMessage(
@@ -423,11 +564,12 @@ function createDraftRenderToolResultMessage(
       {
         type: "tool-result",
         toolCallId: result.toolCallId,
-        toolName: "renderUiDraft",
+        toolName: result.kind === "css" ? "renderCssDraft" : "renderUiDraft",
         output: {
           type: "json",
           value: toJsonValue({
             success: result.success,
+            kind: result.kind ?? "ui",
             screenshotAvailable: Boolean(result.screenshot),
             draftCount,
             maxDrafts: MAX_AGENT_DRAFT_RENDERS,
@@ -451,7 +593,7 @@ function createDraftRenderReferenceMessage(
     content: [
       {
         type: "text",
-        text: "Rendered screenshot of your draft replacement. If it looks good, call injectUi with this HTML. If you see visible design problems, revise the HTML and call renderUiDraft again. You may preview at most three drafts total.",
+        text: "Rendered screenshot of your draft. If it looks good, call the matching final injection tool with this draft. If you see visible design problems, revise and call renderUiDraft or renderCssDraft again. You may preview at most three drafts total.",
       },
       {
         type: "image",
@@ -476,11 +618,8 @@ function getAgentToolControls(input: UiGenerationAgentCommandPayload): {
     if (getAgentMode(input) === "revision") {
       return {
         stage: "extractor",
-        activeTools: ["createExtractor"],
-        toolChoice: {
-          type: "tool",
-          toolName: "createExtractor",
-        },
+        activeTools: ["createExtractor", "renderCssDraft"],
+        toolChoice: "required",
       };
     }
 
@@ -494,7 +633,15 @@ function getAgentToolControls(input: UiGenerationAgentCommandPayload): {
     };
   }
 
-  if (input.approval || input.extractorResult?.valid === false) {
+  if (input.approval) {
+    return {
+      stage: "extractor",
+      activeTools: ["createExtractor", "renderCssDraft"],
+      toolChoice: "required",
+    };
+  }
+
+  if (input.extractorResult?.valid === false) {
     return {
       stage: "extractor",
       activeTools: ["createExtractor"],
@@ -506,33 +653,45 @@ function getAgentToolControls(input: UiGenerationAgentCommandPayload): {
   }
 
   if (input.draftRenderResult?.success === true) {
-    const draftCount = countToolCalls(input.messages, "renderUiDraft");
+    const draftCount = countDraftRenderCalls(input.messages);
 
     if (draftCount < MAX_AGENT_DRAFT_RENDERS) {
       return {
         stage: "draftOrFinal",
-        activeTools: ["renderUiDraft", "injectUi"],
+        activeTools: [
+          "renderUiDraft",
+          "renderCssDraft",
+          "injectUi",
+          "injectCss",
+        ],
         toolChoice: "required",
       };
     }
 
     return {
-      stage: "final",
+      stage: "finalAny",
+      activeTools: ["injectUi", "injectCss"],
+      toolChoice: "required",
     };
   }
 
   if (input.draftRenderResult?.success === false) {
-    const draftCount = countToolCalls(input.messages, "renderUiDraft");
+    const draftCount = countDraftRenderCalls(input.messages);
 
     return {
-      stage: draftCount >= MAX_AGENT_DRAFT_RENDERS ? "final" : "draft",
+      stage: draftCount >= MAX_AGENT_DRAFT_RENDERS ? "finalAny" : "draft",
+      activeTools:
+        draftCount >= MAX_AGENT_DRAFT_RENDERS
+          ? ["injectUi", "injectCss"]
+          : ["renderUiDraft", "renderCssDraft"],
+      toolChoice: "required",
     };
   }
 
   if (input.extractorResult?.valid === true) {
     return {
       stage: "extractorOrDraft",
-      activeTools: ["createExtractor", "renderUiDraft"],
+      activeTools: ["createExtractor", "renderUiDraft", "renderCssDraft"],
       toolChoice: "required",
     };
   }
@@ -596,22 +755,9 @@ export class ClientAIProvider implements AIProvider {
       activeTools: options.activeTools,
       toolChoice: options.toolChoice,
       prepareStep: () => {
-        const toolName =
-          options.stage === "draft"
-            ? "renderUiDraft"
-            : options.stage === "final"
-              ? "injectUi"
-              : null;
+        if (options.activeTools || options.toolChoice) return undefined;
 
-        if (!toolName) return undefined;
-
-        return {
-          activeTools: [toolName],
-          toolChoice: {
-            type: "tool",
-            toolName,
-          },
-        };
+        return undefined;
       },
       tools: {
         reportViolations: tool({
@@ -634,9 +780,19 @@ export class ClientAIProvider implements AIProvider {
             "Submit draft replacement HTML for the browser extension to temporarily render and screenshot before final injection.",
           inputSchema: agentRenderUiDraftInputSchema,
         }),
+        renderCssDraft: tool({
+          description:
+            "Submit draft stylesheet CSS for the browser extension to temporarily place in document head and screenshot before final CSS injection. Each rule must include its complete selector.",
+          inputSchema: agentRenderCssDraftInputSchema,
+        }),
+        injectCss: tool({
+          description:
+            "Submit final stylesheet CSS to save in document head after reviewing a rendered CSS draft screenshot. Each rule must include its complete selector.",
+          inputSchema: agentInjectCssInputSchema,
+        }),
         injectUi: tool({
           description:
-            "Submit the final replacement HTML fragment for injection into the browser page. Use the rendered draft screenshot to revise visible design issues before calling this.",
+            "Submit the final replacement HTML fragment for injection into the browser page. Include companion CSS only when the replacement also needs page-level styles.",
           inputSchema: agentInjectUiInputSchema,
         }),
       },
@@ -680,7 +836,7 @@ export class ClientAIProvider implements AIProvider {
 
     const draftRenderToolResultMessage = createDraftRenderToolResultMessage(
       input.draftRenderResult,
-      countToolCalls(input.messages, "renderUiDraft"),
+      countDraftRenderCalls(input.messages),
     );
     if (draftRenderToolResultMessage) {
       messages.push(draftRenderToolResultMessage);
@@ -807,10 +963,57 @@ export class ClientAIProvider implements AIProvider {
         status: "needsDraftRender",
         messages: nextMessages,
         toolCallId: renderUiDraftCall.toolCallId,
+        kind: "ui",
         extractor: extractorFromAgentInput(extractorInput),
         spec: stripHtmlCodeFence(parsed.data.html),
       };
     }
+
+    const renderCssDraftCall = [...content]
+      .reverse()
+      .find(
+        (part) =>
+          part?.type === "tool-call" && part.toolName === "renderCssDraft",
+      );
+
+    if (renderCssDraftCall) {
+      const parsed = agentRenderCssDraftInputSchema.safeParse(
+        renderCssDraftCall.input,
+      );
+
+      if (!parsed.success) {
+        return {
+          status: "error",
+          messages: nextMessages,
+          error: parsed.error.issues
+            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+            .join("\n"),
+        };
+      }
+
+      const css = cssFromAgentInput(parsed.data);
+      if (css.error || !css.css) {
+        return {
+          status: "error",
+          messages: nextMessages,
+          error: css.error ?? "The agent submitted empty CSS.",
+        };
+      }
+
+      return {
+        status: "needsDraftRender",
+        messages: nextMessages,
+        toolCallId: renderCssDraftCall.toolCallId,
+        kind: "css",
+        css: css.css,
+      };
+    }
+
+    const injectCssCall = [...content]
+      .reverse()
+      .find(
+        (part) => part?.type === "tool-call" && part.toolName === "injectCss",
+      );
 
     const injectUiCall = [...content]
       .reverse()
@@ -829,6 +1032,43 @@ export class ClientAIProvider implements AIProvider {
             .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
             .join("\n"),
         };
+      }
+
+      const companionCss = companionCssFromInjectUi(parsed.data);
+      if (companionCss.error) {
+        return {
+          status: "error",
+          messages: nextMessages,
+          error: companionCss.error,
+        };
+      }
+      let cssForInjection = companionCss.css;
+
+      if (!cssForInjection && injectCssCall) {
+        const parsedCss = agentInjectCssInputSchema.safeParse(
+          injectCssCall.input,
+        );
+
+        if (!parsedCss.success) {
+          return {
+            status: "error",
+            messages: nextMessages,
+            error: parsedCss.error.issues
+              .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+              .join("\n"),
+          };
+        }
+
+        const css = cssFromAgentInput(parsedCss.data);
+        if (css.error || !css.css) {
+          return {
+            status: "error",
+            messages: nextMessages,
+            error: css.error ?? "The agent submitted empty CSS.",
+          };
+        }
+
+        cssForInjection = css.css;
       }
 
       const extractorInput = getLastToolCallInput(
@@ -851,6 +1091,37 @@ export class ClientAIProvider implements AIProvider {
         toolCallId: injectUiCall.toolCallId,
         extractor: extractorFromAgentInput(extractorInput),
         spec: stripHtmlCodeFence(parsed.data.html),
+        css: cssForInjection,
+      };
+    }
+
+    if (injectCssCall) {
+      const parsed = agentInjectCssInputSchema.safeParse(injectCssCall.input);
+
+      if (!parsed.success) {
+        return {
+          status: "error",
+          messages: nextMessages,
+          error: parsed.error.issues
+            .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+            .join("\n"),
+        };
+      }
+
+      const css = cssFromAgentInput(parsed.data);
+      if (css.error || !css.css) {
+        return {
+          status: "error",
+          messages: nextMessages,
+          error: css.error ?? "The agent submitted empty CSS.",
+        };
+      }
+
+      return {
+        status: "readyToInjectCss",
+        messages: nextMessages,
+        toolCallId: injectCssCall.toolCallId,
+        css: css.css,
       };
     }
 
