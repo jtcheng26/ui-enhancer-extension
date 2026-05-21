@@ -66,7 +66,7 @@ export const RENDER_SYSTEMS: Record<RenderSystemId, RenderSystem> = {
   },
   sample: {
     render: (root, data, spec, uiContainer, persistedId) =>
-      MarkupRenderer.render(root, data, SpecMarkup, uiContainer, persistedId),
+      MarkupRenderer.render(root, data, spec, uiContainer, persistedId),
   },
   markup: MarkupRenderer,
 } as const;

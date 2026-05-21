@@ -1,0 +1,14 @@
+User request:
+Make the recommended billing option the primary button and de-emphasize Cancel so one action is clearly dominant.
+
+DOM snapshot of the selected subtree:
+<div class="dialog-actions">
+          <button class="dialog-btn cancel" style="">CANCEL</button>
+          <button class="dialog-btn">MONTHLY</button>
+          <button class="dialog-btn">YEARLY</button>
+        </div>
+
+Return a simple extractor for this selected section.
+Include the important content, URLs, actions, inputs, and repeated items that a UI generator would need.
+Skip decorative or redundant details.
+

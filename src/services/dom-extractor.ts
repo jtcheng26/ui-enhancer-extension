@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildElementSelector, buildStructuralSelector } from "./selector";
 
 export const TransformSchema = z.discriminatedUnion("fn", [
   z.object({ fn: z.literal("trim") }),
@@ -92,7 +93,6 @@ export const ExtractorFieldSchema = z.discriminatedUnion("kind", [
     item: z.string().min(1),
     filter: FilterSchema.optional(),
     exclude: FilterSchema.optional(),
-    limit: z.number().int().min(1).optional(),
     unique: z.boolean().optional(),
   }),
   z.object({
@@ -109,14 +109,101 @@ export const ExtractorFieldSchema = z.discriminatedUnion("kind", [
 
 export const RootSpecSchema = z.object({
   selector: z.string().optional(),
-  required: z.boolean().optional(),
   output: z.string().min(1),
 });
 
-export const DOMExtractorSpecSchema = z.object({
+export type SimpleExtractorField =
+  | {
+      type: "text";
+      selector: string;
+      attribute?: string;
+    }
+  | {
+      type: "url";
+      selector: string;
+      attribute?: string;
+    }
+  | {
+      type: "action";
+      selector: string;
+    }
+  | {
+      type: "input";
+      selector: string;
+    }
+  | {
+      type: "group";
+      selector?: string;
+      fields: Record<string, SimpleExtractorField>;
+    }
+  | {
+      type: "list";
+      selector: string;
+      fields: Record<string, SimpleExtractorField>;
+    };
+
+export interface SimpleDOMExtractorSpec {
+  root: RootSpec;
+  fields: Record<string, SimpleExtractorField>;
+}
+
+export interface LLMSimpleDOMExtractorSpec {
+  fields: Record<string, SimpleExtractorField>;
+}
+
+export const SimpleFieldSchema: z.ZodType<SimpleExtractorField> = z.lazy(() =>
+  z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("text"),
+      selector: z.string(),
+      attribute: z.string().min(1).optional(),
+    }),
+    z.object({
+      type: z.literal("url"),
+      selector: z.string(),
+      attribute: z.string().min(1).optional(),
+    }),
+    z.object({
+      type: z.literal("action"),
+      selector: z.string(),
+    }),
+    z.object({
+      type: z.literal("input"),
+      selector: z.string(),
+    }),
+    z.object({
+      type: z.literal("group"),
+      selector: z.string().optional(),
+      fields: z.record(z.string(), SimpleFieldSchema),
+    }),
+    z.object({
+      type: z.literal("list"),
+      selector: z.string(),
+      fields: z.record(z.string(), SimpleFieldSchema),
+    }),
+  ]),
+);
+
+export const SimpleDOMExtractorSpecSchema: z.ZodType<SimpleDOMExtractorSpec> =
+  z.object({
+    root: RootSpecSchema,
+    fields: z.record(z.string(), SimpleFieldSchema),
+  });
+
+export const LLMSimpleDOMExtractorSpecSchema: z.ZodType<LLMSimpleDOMExtractorSpec> =
+  z.object({
+    fields: z.record(z.string(), SimpleFieldSchema),
+  });
+
+export const LegacyDOMExtractorSpecSchema = z.object({
   root: RootSpecSchema,
   extractors: z.record(z.string(), z.record(z.string(), ExtractorFieldSchema)),
 });
+
+export const DOMExtractorSpecSchema = z.union([
+  SimpleDOMExtractorSpecSchema,
+  LegacyDOMExtractorSpecSchema,
+]);
 
 export type Transform = z.infer<typeof TransformSchema>;
 export type Filter = z.infer<typeof FilterSchema>;
@@ -124,13 +211,31 @@ export type ValueSource = z.infer<typeof ValueSourceSchema>;
 export type DeriveFn = z.infer<typeof DeriveFnSchema>;
 export type ExtractorField = z.infer<typeof ExtractorFieldSchema>;
 export type RootSpec = z.infer<typeof RootSpecSchema>;
-export type DOMExtractorSpec = z.infer<typeof DOMExtractorSpecSchema>;
-export type ExtractorMap = DOMExtractorSpec["extractors"][string];
+export type LegacyDOMExtractorSpec = z.infer<
+  typeof LegacyDOMExtractorSpecSchema
+>;
+export type DOMExtractorSpec = SimpleDOMExtractorSpec | LegacyDOMExtractorSpec;
+export type ExtractorMap = LegacyDOMExtractorSpec["extractors"][string];
 
 export interface ClickActionValue {
   type: "clickAction";
   selector: string;
   filter?: Filter;
+}
+
+export interface InputValue {
+  type: "input";
+  selector?: string;
+  tagName: string;
+  inputType?: string;
+  name?: string;
+  label?: string;
+  placeholder?: string;
+  value?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  required?: boolean;
+  options?: string[];
 }
 
 export type ExtractedValue =
@@ -139,6 +244,7 @@ export type ExtractedValue =
   | number
   | null
   | ClickActionValue
+  | InputValue
   | ExtractedValue[]
   | { [key: string]: ExtractedValue };
 
@@ -157,6 +263,39 @@ function validateSelector(
     frag.querySelector(selector);
   } catch {
     errors.push(`${path}: invalid CSS selector "${selector}"`);
+  }
+}
+
+function validateSimpleSelectorSyntax(
+  selector: string,
+  path: string,
+  errors: string[],
+) {
+  const trimmedSelector = selector.trim();
+
+  if (trimmedSelector.length === 0) {
+    errors.push(`${path}: selector must not be empty`);
+    return;
+  }
+
+  const disallowedPatterns: Array<[RegExp, string]> = [
+    [/[~]/, 'general sibling combinator "~"'],
+    [/[+]/, 'adjacent sibling combinator "+"'],
+    [/[,]/, 'selector list separator ","'],
+    [/::/, "pseudo-elements"],
+    [/:has\(/i, ":has()"],
+    [/:is\(/i, ":is()"],
+    [/:where\(/i, ":where()"],
+    [/:not\(/i, ":not()"],
+  ];
+
+  for (const [pattern, label] of disallowedPatterns) {
+    if (pattern.test(trimmedSelector)) {
+      errors.push(
+        `${path}: unsupported selector syntax ${label} in "${selector}"`,
+      );
+      return;
+    }
   }
 }
 
@@ -198,7 +337,91 @@ function validateFilter(
   }
 }
 
-function semanticValidate(spec: DOMExtractorSpec, errors: string[]): void {
+function isSimpleDOMExtractorSpec(raw: unknown): raw is SimpleDOMExtractorSpec {
+  return (
+    raw !== null &&
+    typeof raw === "object" &&
+    "fields" in raw &&
+    !("extractors" in raw)
+  );
+}
+
+function isLegacyDOMExtractorSpec(raw: unknown): raw is LegacyDOMExtractorSpec {
+  return raw !== null && typeof raw === "object" && "extractors" in raw;
+}
+
+function validateSimpleField(
+  field: SimpleExtractorField,
+  path: string,
+  frag: DocumentFragment,
+  errors: string[],
+): void {
+  switch (field.type) {
+    case "text":
+    case "url":
+    case "action":
+    case "input":
+      validateSimpleSelectorSyntax(field.selector, `${path}.selector`, errors);
+      validateSelector(field.selector, `${path}.selector`, frag, errors);
+      break;
+    case "group":
+      if (field.selector) {
+        validateSimpleSelectorSyntax(
+          field.selector,
+          `${path}.selector`,
+          errors,
+        );
+        validateSelector(field.selector, `${path}.selector`, frag, errors);
+      }
+
+      for (const [fieldName, childField] of Object.entries(field.fields)) {
+        validateSimpleField(
+          childField,
+          `${path}.fields.${fieldName}`,
+          frag,
+          errors,
+        );
+      }
+      break;
+    case "list":
+      validateSimpleSelectorSyntax(field.selector, `${path}.selector`, errors);
+      validateSelector(field.selector, `${path}.selector`, frag, errors);
+
+      for (const [fieldName, childField] of Object.entries(field.fields)) {
+        validateSimpleField(
+          childField,
+          `${path}.fields.${fieldName}`,
+          frag,
+          errors,
+        );
+      }
+      break;
+  }
+}
+
+function semanticValidateSimple(
+  spec: SimpleDOMExtractorSpec,
+  errors: string[],
+): void {
+  const frag = document.createDocumentFragment();
+
+  if (spec.root.selector) {
+    validateSelector(spec.root.selector, "root.selector", frag, errors);
+  }
+
+  if (Object.keys(spec.fields).length === 0) {
+    errors.push("fields: expected at least one field");
+  }
+
+  for (const [fieldName, field] of Object.entries(spec.fields)) {
+    validateSimpleField(field, `fields.${fieldName}`, frag, errors);
+  }
+}
+
+function semanticValidateLegacy(
+  spec: LegacyDOMExtractorSpec,
+  errors: string[],
+): void {
   const extractorKeys = new Set(Object.keys(spec.extractors));
   const frag = document.createDocumentFragment();
 
@@ -287,7 +510,12 @@ function semanticValidate(spec: DOMExtractorSpec, errors: string[]): void {
           }
           break;
         case "clickAction":
-          validateSelector(field.selector, `${fieldPath}.selector`, frag, errors);
+          validateSelector(
+            field.selector,
+            `${fieldPath}.selector`,
+            frag,
+            errors,
+          );
           if (field.filter) {
             validateFilter(field.filter, `${fieldPath}.filter`, frag, errors);
           }
@@ -298,20 +526,54 @@ function semanticValidate(spec: DOMExtractorSpec, errors: string[]): void {
 }
 
 export function validateSpec(raw: unknown): ValidationResult {
-  const result = DOMExtractorSpecSchema.safeParse(raw);
-  if (!result.success) {
+  if (isSimpleDOMExtractorSpec(raw)) {
+    const result = SimpleDOMExtractorSpecSchema.safeParse(raw);
+    if (!result.success) {
+      return {
+        valid: false,
+        errors: result.error.issues.map(
+          (issue) => `${issue.path.join(".") || "/"}: ${issue.message}`,
+        ),
+      };
+    }
+
+    const semanticErrors: string[] = [];
+    semanticValidateSimple(result.data, semanticErrors);
+    return { valid: semanticErrors.length === 0, errors: semanticErrors };
+  }
+
+  if (isLegacyDOMExtractorSpec(raw)) {
+    const result = LegacyDOMExtractorSpecSchema.safeParse(raw);
+    if (!result.success) {
+      return {
+        valid: false,
+        errors: result.error.issues.map(
+          (issue) => `${issue.path.join(".") || "/"}: ${issue.message}`,
+        ),
+      };
+    }
+
+    const semanticErrors: string[] = [];
+    semanticValidateLegacy(result.data, semanticErrors);
+    return { valid: semanticErrors.length === 0, errors: semanticErrors };
+  }
+
+  const fallbackResult = DOMExtractorSpecSchema.safeParse(raw);
+  if (!fallbackResult.success) {
     return {
       valid: false,
-      errors: result.error.issues.map(
+      errors: fallbackResult.error.issues.map(
         (issue) => `${issue.path.join(".") || "/"}: ${issue.message}`,
       ),
     };
   }
 
-  const semanticErrors: string[] = [];
-  semanticValidate(result.data, semanticErrors);
-
-  return { valid: semanticErrors.length === 0, errors: semanticErrors };
+  return {
+    valid: false,
+    errors: [
+      '/: expected an extractor spec with either "fields" or "extractors"',
+    ],
+  };
 }
 
 export function matchesFilter(el: Element, filter: Filter): boolean {
@@ -367,6 +629,246 @@ function queryFirstAll(
   }
 
   return [];
+}
+
+function queryOne(scope: Element | Document, selector: string): Element | null {
+  try {
+    return scope.querySelector(selector);
+  } catch {
+    return null;
+  }
+}
+
+function queryAll(scope: Element | Document, selector: string): Element[] {
+  try {
+    return Array.from(scope.querySelectorAll(selector));
+  } catch {
+    return [];
+  }
+}
+
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function readTextFieldValue(
+  element: Element,
+  attribute?: string,
+): string | null {
+  if (attribute) {
+    const attributeValue = element.getAttribute(attribute);
+    return attributeValue ? normalizeText(attributeValue) || null : null;
+  }
+
+  const text = normalizeText(element.textContent);
+  return text || null;
+}
+
+function readUrlFieldValue(
+  element: Element,
+  attribute?: string,
+): string | null {
+  const attributes = attribute
+    ? [attribute]
+    : element instanceof HTMLAnchorElement
+      ? ["href"]
+      : element instanceof HTMLImageElement
+        ? ["src"]
+        : element instanceof HTMLFormElement
+          ? ["action"]
+          : ["href", "src", "action"];
+
+  for (const attributeName of attributes) {
+    const propertyValue =
+      attributeName in element
+        ? (element as unknown as Record<string, unknown>)[attributeName]
+        : null;
+    const rawValue =
+      typeof propertyValue === "string"
+        ? propertyValue
+        : element.getAttribute(attributeName);
+    const normalizedValue = normalizeText(rawValue);
+
+    if (!normalizedValue) {
+      continue;
+    }
+
+    try {
+      return new URL(normalizedValue, element.ownerDocument.baseURI).toString();
+    } catch {
+      return normalizedValue;
+    }
+  }
+
+  return null;
+}
+
+function getLabelTextForInput(
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): string | undefined {
+  const labelFromCollection = Array.from(element.labels ?? [])
+    .map((label) => normalizeText(label.textContent))
+    .find(Boolean);
+
+  if (labelFromCollection) {
+    return labelFromCollection;
+  }
+
+  const ariaLabel = normalizeText(element.getAttribute("aria-label"));
+  if (ariaLabel) {
+    return ariaLabel;
+  }
+
+  const labelledBy = normalizeText(element.getAttribute("aria-labelledby"));
+  if (labelledBy) {
+    const labelText = labelledBy
+      .split(/\s+/)
+      .map((id) =>
+        normalizeText(element.ownerDocument.getElementById(id)?.textContent),
+      )
+      .filter(Boolean)
+      .join(" ");
+
+    if (labelText) {
+      return labelText;
+    }
+  }
+
+  return undefined;
+}
+
+function readInputFieldValue(element: Element): InputValue | null {
+  if (
+    !(
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+    )
+  ) {
+    return null;
+  }
+
+  const baseValue: InputValue = {
+    type: "input",
+    selector: buildElementSelector(element, element.ownerDocument),
+    tagName: element.tagName.toLowerCase(),
+    name: element.getAttribute("name") || undefined,
+    label: getLabelTextForInput(element),
+    placeholder:
+      "placeholder" in element
+        ? normalizeText(element.placeholder) || undefined
+        : undefined,
+    disabled: element.disabled || undefined,
+    required: element.required || undefined,
+  };
+
+  if (element instanceof HTMLInputElement) {
+    const isCheckedInput =
+      element.type === "checkbox" || element.type === "radio";
+
+    return {
+      ...baseValue,
+      inputType: element.type || "text",
+      checked: isCheckedInput ? element.checked : undefined,
+      value: isCheckedInput ? undefined : normalizeText(element.value) || "",
+    };
+  }
+
+  if (element instanceof HTMLTextAreaElement) {
+    return {
+      ...baseValue,
+      value: normalizeText(element.value) || "",
+    };
+  }
+
+  return {
+    ...baseValue,
+    value: normalizeText(element.value) || "",
+    options: Array.from(element.options)
+      .map((option) => normalizeText(option.textContent))
+      .filter(Boolean)
+      .slice(0, 12),
+  };
+}
+
+function hasMeaningfulExtractedValue(value: ExtractedValue): boolean {
+  if (value === null) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+
+  if (Array.isArray(value)) {
+    return value.some((item) => hasMeaningfulExtractedValue(item));
+  }
+
+  if ("type" in value) {
+    return true;
+  }
+
+  return Object.values(value).some((item) => hasMeaningfulExtractedValue(item));
+}
+
+function executeSimpleFields(
+  scope: Element | Document,
+  fields: Record<string, SimpleExtractorField>,
+): Record<string, ExtractedValue> {
+  return Object.fromEntries(
+    Object.entries(fields).map(([fieldName, field]) => [
+      fieldName,
+      executeSimpleField(scope, field),
+    ]),
+  );
+}
+
+function executeSimpleField(
+  scope: Element | Document,
+  field: SimpleExtractorField,
+): ExtractedValue {
+  switch (field.type) {
+    case "text": {
+      const element = queryOne(scope, field.selector);
+      return element ? readTextFieldValue(element, field.attribute) : null;
+    }
+    case "url": {
+      const element = queryOne(scope, field.selector);
+      return element ? readUrlFieldValue(element, field.attribute) : null;
+    }
+    case "action": {
+      const element = queryOne(scope, field.selector);
+      if (!(element instanceof HTMLElement)) {
+        return null;
+      }
+      return {
+        type: "clickAction",
+        selector:
+          buildElementSelector(element, element.ownerDocument) ||
+          buildStructuralSelector(element, element.ownerDocument),
+      } satisfies ClickActionValue;
+    }
+    case "input": {
+      const element = queryOne(scope, field.selector);
+      return element ? readInputFieldValue(element) : null;
+    }
+    case "group": {
+      const groupScope = field.selector
+        ? queryOne(scope, field.selector)
+        : scope;
+      return groupScope ? executeSimpleFields(groupScope, field.fields) : null;
+    }
+    case "list": {
+      const elements = queryAll(scope, field.selector);
+      return elements
+        .map((element) => executeSimpleFields(element, field.fields))
+        .filter((item) => hasMeaningfulExtractedValue(item));
+    }
+  }
 }
 
 function applyTransforms(value: string, transforms: Transform[]): string {
@@ -540,10 +1042,6 @@ function applyListPostProcess(
 ): ExtractedValue[] {
   let result = items;
 
-  if (field.limit !== undefined) {
-    result = result.slice(0, field.limit);
-  }
-
   if (field.unique) {
     const seen = new Set<string>();
     result = result.filter((item) => {
@@ -689,32 +1187,60 @@ executeExtractor = (
   return result;
 };
 
-export function parseSpec(
-  spec: DOMExtractorSpec,
-  rootEl: Document | Element = document,
+function resolveRootScope(
+  root: RootSpec,
+  rootEl: Document | Element,
+): Element | Document | null {
+  let scope: Document | Element = rootEl;
+
+  if (!root.selector) {
+    return scope;
+  }
+
+  const found =
+    (rootEl instanceof Document
+      ? rootEl
+      : (rootEl.ownerDocument ?? document)
+    ).querySelector(root.selector)?.parentElement ??
+    (rootEl instanceof Element
+      ? rootEl.querySelector(root.selector)?.parentElement
+      : null);
+
+  if (!found) {
+    return scope;
+  }
+
+  return found;
+}
+
+function parseSimpleSpec(
+  spec: SimpleDOMExtractorSpec,
+  rootEl: Document | Element,
 ): {
   data: Record<string, ExtractedValue> | null;
   root: Element | Document | null;
 } {
-  let scope: Document | Element = rootEl;
+  const scope = resolveRootScope(spec.root, rootEl);
+  if (!scope) {
+    return { data: null, root: null };
+  }
 
-  if (spec.root.selector) {
-    const found =
-      (rootEl instanceof Document
-        ? rootEl
-        : (rootEl.ownerDocument ?? document)
-      ).querySelector(spec.root.selector) ??
-      (rootEl instanceof Element
-        ? rootEl.querySelector(spec.root.selector)
-        : null);
+  return {
+    data: executeSimpleFields(scope, spec.fields),
+    root: spec.root.selector ? scope.querySelector(spec.root.selector) : scope,
+  };
+}
 
-    if (!found) {
-      if (spec.root.required) {
-        return { data: null, root: null };
-      }
-    } else {
-      scope = found;
-    }
+function parseLegacySpec(
+  spec: LegacyDOMExtractorSpec,
+  rootEl: Document | Element,
+): {
+  data: Record<string, ExtractedValue> | null;
+  root: Element | Document | null;
+} {
+  const scope = resolveRootScope(spec.root, rootEl);
+  if (!scope) {
+    return { data: null, root: null };
   }
 
   const rootExtractor = spec.extractors[spec.root.output];
@@ -728,6 +1254,18 @@ export function parseSpec(
     data: executeExtractor(scope, rootExtractor, spec.extractors),
     root: scope,
   };
+}
+
+export function parseSpec(
+  spec: DOMExtractorSpec,
+  rootEl: Document | Element = document,
+): {
+  data: Record<string, ExtractedValue> | null;
+  root: Element | Document | null;
+} {
+  return isSimpleDOMExtractorSpec(spec)
+    ? parseSimpleSpec(spec, rootEl)
+    : parseLegacySpec(spec, rootEl);
 }
 
 export function validateAndParse(

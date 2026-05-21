@@ -6,10 +6,10 @@ import {
 } from "dom-accessibility-api";
 
 import type { JsonifiedDomNode } from "../types";
-import { buildElementSelector } from "./selector";
+import { buildElementSelector, buildImportantSelectors } from "./selector";
 
 const MAX_TREE_DEPTH = 12;
-const MAX_CHILDREN_PER_NODE = 25;
+const MAX_CHILDREN_PER_NODE = 50;
 const MAX_TEXT_PREVIEW_LENGTH = 140;
 
 const SKIPPED_TAG_NAMES = new Set([
@@ -69,6 +69,7 @@ const STABLE_ATTRIBUTE_NAMES = [
   "aria-pressed",
   "aria-current",
   "data-testid",
+  "data-id",
   "data-test",
   "data-qa",
   "data-cy",
@@ -172,7 +173,10 @@ function getControlValue(element: HTMLElement): string | undefined {
     return truncate(normalizeWhitespace(element.value));
   }
 
-  if (element instanceof HTMLProgressElement || element instanceof HTMLMeterElement) {
+  if (
+    element instanceof HTMLProgressElement ||
+    element instanceof HTMLMeterElement
+  ) {
     return String(element.value);
   }
 
@@ -265,7 +269,10 @@ function isInteractiveElement(element: HTMLElement, role: string): boolean {
   return element.tabIndex >= 0;
 }
 
-function shouldSkipElement(element: HTMLElement, forceInclude: boolean): boolean {
+function shouldSkipElement(
+  element: HTMLElement,
+  forceInclude: boolean,
+): boolean {
   if (
     element.matches("[data-aui-overlay], ai-ui-floating-popup") ||
     element.classList.contains("aui-injected-placeholder")
@@ -334,6 +341,7 @@ function describeNode(
 
   return {
     selector: buildElementSelector(element, element.ownerDocument),
+    selectors: buildImportantSelectors(element, element.ownerDocument),
     role,
     tag: getTagHint(element, role),
     name,
@@ -348,7 +356,10 @@ function describeNode(
 }
 
 function isMeaningfulNode(
-  node: Omit<JsonifiedDomNode, "children" | "truncatedChildCount" | "truncated">,
+  node: Omit<
+    JsonifiedDomNode,
+    "children" | "truncatedChildCount" | "truncated"
+  >,
   childCount: number,
   forceInclude: boolean,
 ): boolean {
@@ -388,9 +399,7 @@ function collectMeaningfulNodes(
 
   const childSnapshots = Array.from(element.children)
     .filter((child): child is HTMLElement => child instanceof HTMLElement)
-    .flatMap((child) =>
-      collectMeaningfulNodes(child, currentDepth + 1, false),
-    );
+    .flatMap((child) => collectMeaningfulNodes(child, currentDepth + 1, false));
 
   const node = describeNode(element);
 
@@ -419,13 +428,14 @@ function collectMeaningfulNodes(
         childSnapshots.length > limitedChildren.length
           ? childSnapshots.length
           : undefined,
-      truncated:
-        childSnapshots.length > limitedChildren.length || undefined,
+      truncated: childSnapshots.length > limitedChildren.length || undefined,
     },
   ];
 }
 
-export function serializeAccessibilityTree(element: HTMLElement): JsonifiedDomNode {
+export function serializeAccessibilityTree(
+  element: HTMLElement,
+): JsonifiedDomNode {
   const [rootSnapshot] = collectMeaningfulNodes(element, 0, true);
 
   if (rootSnapshot) {
@@ -476,7 +486,9 @@ function formatPromptMetadata(node: JsonifiedDomNode): string[] {
   return metadata;
 }
 
-function formatPromptAttrs(attributes: Record<string, string> | undefined): string {
+function formatPromptAttrs(
+  attributes: Record<string, string> | undefined,
+): string {
   if (!attributes) {
     return "";
   }
@@ -486,6 +498,30 @@ function formatPromptAttrs(attributes: Record<string, string> | undefined): stri
     .map(([key, value]) => `${key}=${JSON.stringify(value)}`);
 
   return entries.length > 0 ? ` attrs{${entries.join(" ")}}` : "";
+}
+
+function formatPromptSelectors(node: JsonifiedDomNode): string {
+  const selectors = [node.selector, ...(node.selectors ?? [])];
+
+  if (selectors.length === 0) {
+    return "";
+  }
+
+  const [primarySelector, ...alternateSelectors] = selectors;
+  const parts = primarySelector
+    ? [` sel=${JSON.stringify(primarySelector)}`]
+    : [];
+
+  if (alternateSelectors.length > 0) {
+    parts.push(
+      ` sels{${alternateSelectors
+        .slice(0, 4)
+        .map((selector) => JSON.stringify(selector))
+        .join(" ")}}`,
+    );
+  }
+
+  return parts.join("");
 }
 
 function getPromptRole(node: JsonifiedDomNode): string {
@@ -517,6 +553,7 @@ export function formatAccessibilityTree(
   }
 
   parts.push(formatPromptAttrs(node.attrs));
+  parts.push(formatPromptSelectors(node));
 
   const line = parts.join(" ").replace(/\s+$/, "");
   const children = (node.children ?? []).map((child) =>

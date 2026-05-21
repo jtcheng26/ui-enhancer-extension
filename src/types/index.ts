@@ -23,7 +23,8 @@ export interface SelectedElement {
 }
 
 export interface JsonifiedDomNode {
-  selector: string;
+  selector?: string;
+  selectors?: string[];
   role: string;
   tag?: string;
   name?: string;
@@ -86,7 +87,7 @@ export interface UsabilityRule {
 }
 
 export interface UsabilityViolation {
-  ruleId: string;
+  ruleId?: string;
   selector: string;
   description: string;
   resolutionPrompt: string;

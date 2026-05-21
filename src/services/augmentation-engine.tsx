@@ -56,9 +56,13 @@ interface MountedAugmentation {
   renderedElement?: HTMLElement | null;
   originalDisplay?: string;
   originalAriaHidden?: string | null;
+  usesBodyWrapper?: boolean;
   ui?: ShadowRootContentScriptUi<{ root: ReactDOM.Root }>;
   teardown: () => void;
 }
+
+const BODY_CONTENT_WRAPPER_SELECTOR = "[data-aui-body-content-wrapper]";
+const BODY_CONTENT_WRAPPER_COUNT_ATTR = "data-aui-body-content-wrapper-count";
 
 function isPlainObject(
   value: unknown,
@@ -180,8 +184,12 @@ export class AugmentationEngine {
       return null;
     }
 
-    const originalDisplay = replacedElement.style.display;
-    const originalAriaHidden = replacedElement.getAttribute("aria-hidden");
+    const usesBodyWrapper = replacedElement === this.root.body;
+    const hiddenElement = usesBodyWrapper
+      ? this.acquireBodyContentWrapper()
+      : replacedElement;
+    const originalDisplay = hiddenElement.style.display;
+    const originalAriaHidden = hiddenElement.getAttribute("aria-hidden");
     const mountAnchor = this.root.createElement("div");
     const label = extractor.root.output;
 
@@ -192,9 +200,13 @@ export class AugmentationEngine {
 
     const containerId = `aui-augmentation-${id}`;
     mountAnchor.id = containerId;
-    replacedElement.insertAdjacentElement("afterend", mountAnchor);
-    replacedElement.style.display = "none";
-    replacedElement.setAttribute("aria-hidden", "true");
+    if (usesBodyWrapper) {
+      this.root.body.appendChild(mountAnchor);
+    } else {
+      replacedElement.insertAdjacentElement("afterend", mountAnchor);
+    }
+    hiddenElement.style.display = "none";
+    hiddenElement.setAttribute("aria-hidden", "true");
 
     let ui: ShadowRootContentScriptUi<{ root: ReactDOM.Root }> | undefined;
     let renderUpdater: RenderUpdater | undefined;
@@ -224,12 +236,16 @@ export class AugmentationEngine {
       });
       ui.mount();
     } catch (error) {
-      replacedElement.style.display = originalDisplay;
-
-      if (originalAriaHidden === null) {
-        replacedElement.removeAttribute("aria-hidden");
+      if (usesBodyWrapper) {
+        this.releaseBodyContentWrapper();
       } else {
-        replacedElement.setAttribute("aria-hidden", originalAriaHidden);
+        hiddenElement.style.display = originalDisplay;
+
+        if (originalAriaHidden === null) {
+          hiddenElement.removeAttribute("aria-hidden");
+        } else {
+          hiddenElement.setAttribute("aria-hidden", originalAriaHidden);
+        }
       }
 
       mountAnchor.remove();
@@ -256,13 +272,14 @@ export class AugmentationEngine {
       renderSystemId,
       renderUpdater,
       lastScrapedData: data,
-      originalElement: replacedElement,
+      originalElement: hiddenElement,
       renderedElement:
-        replacedElement.nextElementSibling instanceof HTMLElement
-          ? replacedElement.nextElementSibling
+        mountAnchor.nextElementSibling instanceof HTMLElement
+          ? mountAnchor.nextElementSibling
           : null,
       originalDisplay,
       originalAriaHidden,
+      usesBodyWrapper,
       ui,
       teardown: () => {
         ui?.remove();
@@ -465,16 +482,20 @@ export class AugmentationEngine {
     }
 
     if (mountedAugmentation?.originalElement) {
-      mountedAugmentation.originalElement.style.display =
-        mountedAugmentation.originalDisplay ?? "";
-
-      if (mountedAugmentation.originalAriaHidden == null) {
-        mountedAugmentation.originalElement.removeAttribute("aria-hidden");
+      if (mountedAugmentation.usesBodyWrapper) {
+        this.releaseBodyContentWrapper();
       } else {
-        mountedAugmentation.originalElement.setAttribute(
-          "aria-hidden",
-          mountedAugmentation.originalAriaHidden,
-        );
+        mountedAugmentation.originalElement.style.display =
+          mountedAugmentation.originalDisplay ?? "";
+
+        if (mountedAugmentation.originalAriaHidden == null) {
+          mountedAugmentation.originalElement.removeAttribute("aria-hidden");
+        } else {
+          mountedAugmentation.originalElement.setAttribute(
+            "aria-hidden",
+            mountedAugmentation.originalAriaHidden,
+          );
+        }
       }
     } else {
       this.root.getElementById(augmentation.containerId)?.remove();
@@ -522,5 +543,77 @@ export class AugmentationEngine {
       height: "0",
       transition: "transform 80ms ease, width 80ms ease, height 80ms ease",
     });
+  }
+
+  private getBodyContentWrapper() {
+    const wrapper = this.root.body.querySelector(BODY_CONTENT_WRAPPER_SELECTOR);
+    return wrapper instanceof HTMLDivElement ? wrapper : null;
+  }
+
+  private acquireBodyContentWrapper() {
+    let wrapper = this.getBodyContentWrapper();
+
+    if (!wrapper) {
+      wrapper = this.root.createElement("div");
+      wrapper.setAttribute("data-aui-body-content-wrapper", "true");
+
+      const childNodes = Array.from(this.root.body.childNodes);
+      this.root.body.prepend(wrapper);
+
+      for (const childNode of childNodes) {
+        if (childNode === wrapper) {
+          continue;
+        }
+
+        if (
+          childNode instanceof HTMLElement &&
+          (childNode.matches("ai-ui-floating-popup, [data-aui-overlay]") ||
+            childNode.tagName.toLowerCase().startsWith("augmentation_"))
+        ) {
+          continue;
+        }
+
+        wrapper.appendChild(childNode);
+      }
+    }
+
+    const currentCount = Number(
+      wrapper.getAttribute(BODY_CONTENT_WRAPPER_COUNT_ATTR) ?? "0",
+    );
+    wrapper.setAttribute(
+      BODY_CONTENT_WRAPPER_COUNT_ATTR,
+      String(currentCount + 1),
+    );
+
+    return wrapper;
+  }
+
+  private releaseBodyContentWrapper() {
+    const wrapper = this.getBodyContentWrapper();
+    if (!wrapper) {
+      return;
+    }
+
+    const currentCount = Number(
+      wrapper.getAttribute(BODY_CONTENT_WRAPPER_COUNT_ATTR) ?? "1",
+    );
+
+    if (currentCount > 1) {
+      wrapper.setAttribute(
+        BODY_CONTENT_WRAPPER_COUNT_ATTR,
+        String(currentCount - 1),
+      );
+      return;
+    }
+
+    wrapper.removeAttribute(BODY_CONTENT_WRAPPER_COUNT_ATTR);
+    wrapper.style.display = "";
+    wrapper.removeAttribute("aria-hidden");
+
+    while (wrapper.firstChild) {
+      this.root.body.insertBefore(wrapper.firstChild, wrapper);
+    }
+
+    wrapper.remove();
   }
 }

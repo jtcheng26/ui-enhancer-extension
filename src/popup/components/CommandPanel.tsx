@@ -38,6 +38,7 @@ import {
   resolveSelectedElement,
   screenshotElement,
   withElementHidden,
+  withElementsHidden,
 } from "@/services/dom-inspection-service";
 import { RENDER_SYSTEMS, RenderSystemId } from "@/services/renderer/renderer";
 
@@ -80,33 +81,30 @@ const STRATEGY_OPTIONS: {
   description: string;
   icon: string;
 }[] = [
-  {
-    value: "sample",
-    label: "Sample",
-    description: "Example data, no AI calls",
-    icon: "📐",
-  },
+  // {
+  //   value: "sample",
+  //   label: "Sample",
+  //   description: "Example data, no AI calls",
+  //   icon: "📐",
+  // },
   {
     value: "markup",
     label: "Markup Generation",
     description: "Generate HTML code",
     icon: "🤖",
   },
-  {
-    value: "json-render",
-    label: "Page update",
-    description: "Create a new interface directly on the current page",
-    icon: "🎨",
-  },
+  // {
+  //   value: "json-render",
+  //   label: "Page update",
+  //   description: "Create a new interface directly on the current page",
+  //   icon: "🎨",
+  // },
 ];
 
 const USE_EXAMPLE_VIOLATIONS_FOR_ACKNOWLEDGEMENT = false;
 
 function isAncestorSelector(ancestor: string, descendant: string) {
-  return (
-    ancestor !== descendant &&
-    descendant.startsWith(`${ancestor} > `)
-  );
+  return ancestor !== descendant && descendant.startsWith(`${ancestor} > `);
 }
 
 function getSelectorDepth(selector: string) {
@@ -147,12 +145,14 @@ export function CommandPanel({
   >(null);
   const isBusy = generationStep !== null || isDetectingUsability;
   const [requestSettings, setRequestSettings] = useState<RequestSettings>({
-    strategy: "sample",
+    strategy: "markup",
     useUsabilityRules: true,
   });
   const [settingsOpen, setSettingsOpen] = useState(true);
-  const [internalUsabilityGenerationQueue, setInternalUsabilityGenerationQueue] =
-    useState<UsabilityGenerationTask[]>([]);
+  const [
+    internalUsabilityGenerationQueue,
+    setInternalUsabilityGenerationQueue,
+  ] = useState<UsabilityGenerationTask[]>([]);
   const [
     internalActiveUsabilityGenerationTaskId,
     setInternalActiveUsabilityGenerationTaskId,
@@ -255,9 +255,12 @@ export function CommandPanel({
       const selectedDomElement = resolveSelectedElement(requestSelectedElement);
 
       if (selectedDomElement) {
-        const floatingPopupHost = document.querySelector("ai-ui-floating-popup");
+        const floatingPopupHost = document
+          .querySelector("ai-ui-floating-popup")
+          ?.shadowRoot?.querySelector("#aui-popup");
+        const overlays = document.querySelectorAll("[data-aui-overlay=true]");
         screenshot = floatingPopupHost
-          ? await withElementHidden(floatingPopupHost, () =>
+          ? await withElementsHidden([floatingPopupHost, ...overlays], () =>
               screenshotElement(selectedDomElement),
             )
           : await screenshotElement(selectedDomElement);
@@ -269,9 +272,15 @@ export function CommandPanel({
     setGenerationStep({ phase: "extractor" });
 
     try {
-      const extractor = await submitAugmentationRequest(requestPrompt, surface, {
-        selectedElement: requestSelectedElement,
-      });
+      console.log(screenshot);
+
+      const extractor = await submitAugmentationRequest(
+        requestPrompt,
+        surface,
+        {
+          selectedElement: requestSelectedElement,
+        },
+      );
 
       if (submissionVersion !== submissionVersionRef.current) {
         return false;
@@ -294,11 +303,16 @@ export function CommandPanel({
       }
 
       setGenerationStep({ phase: "ui", data: parsed.data });
-      const uiSpecString = await createUiSpec(requestPrompt, surface, screenshot, {
-        selectedElement: requestSelectedElement,
-        data: parsed.data,
-        strategy: requestSettings.strategy,
-      });
+      const uiSpecString = await createUiSpec(
+        requestPrompt,
+        surface,
+        screenshot,
+        {
+          selectedElement: requestSelectedElement,
+          data: parsed.data,
+          strategy: requestSettings.strategy,
+        },
+      );
 
       if (submissionVersion !== submissionVersionRef.current) {
         return false;
@@ -425,9 +439,12 @@ export function CommandPanel({
       }
 
       if (!element) {
-        logger.warn("Skipping usability generation task because selector did not resolve.", {
-          selector: rootViolation.selector,
-        });
+        logger.warn(
+          "Skipping usability generation task because selector did not resolve.",
+          {
+            selector: rootViolation.selector,
+          },
+        );
         return [];
       }
 

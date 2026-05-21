@@ -1,23 +1,9 @@
-Here is a JSON snapshot of a DOM subtree. Analyze its structure, identify all
-semantically meaningful data it contains, and produce a DOMExtractorSpec that
-extracts that data into a clean, typed JSON object.
+User request:
+{{prompt}}
 
-DOM SNAPSHOT:
+DOM snapshot of the selected subtree:
 {{dom}}
 
-INSTRUCTIONS:
-1. Identify the page region this subtree represents and choose an appropriate
-   root output type name.
-
-2. List every distinct piece of data visible or inferable in the snapshot —
-   including repeated items, state flags (empty states, visibility toggles),
-   links, and counts. This is your extraction target list.
-
-3. For each piece of data, choose the safest and most stable selector strategy.
-   Note any hashed class names and add a stable fallback.
-
-4. For any node marked isTruncated: true, reason about what the live DOM
-   likely contains based on textPreview, childCount, and surrounding context.
-   Write selectors for the live DOM, not just what the snapshot shows.
-
-5. Output the DOMExtractorSpec JSON. No other text.
+Return a simple extractor for this selected section.
+Include the important content, URLs, actions, inputs, and repeated items that a UI generator would need.
+Skip decorative or redundant details.

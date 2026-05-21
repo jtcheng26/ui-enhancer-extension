@@ -1,9 +1,6 @@
 Selected element HTML:
 {{html}}
 
-Selected element style summary:
-{{styles}}
-
 Data schema (source of truth for all slot paths):
 {{data}}
 

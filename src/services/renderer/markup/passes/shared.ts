@@ -1,4 +1,9 @@
-export function fillDataSlots(el: Element, alias: string, item: unknown) {
+export function fillDataSlots(
+  el: Element,
+  alias: string,
+  item: unknown,
+  ignoreEmpty: boolean = true,
+) {
   const slotPattern = new RegExp(
     `\\{\\{${alias}(\\.[\\.\\w\\[\\]]+)?\\}\\}`,
     "g",
@@ -8,6 +13,7 @@ export function fillDataSlots(el: Element, alias: string, item: unknown) {
     input.replace(slotPattern, (s, tail) => {
       const value = tail ? resolvePath(item, tail.slice(1)) : item;
       // don't expand if a value can't be directly resolved
+      if (!ignoreEmpty && (value === null || value === undefined)) return "";
       if (typeof value === "object") return s;
       return String(value);
     });

@@ -5,8 +5,10 @@ import {
   UsabilityDetectionRequest,
 } from "./ai-provider";
 import {
+  ClickActionValue,
   DOMExtractorSpec,
-  DOMExtractorSpecSchema,
+  InputValue,
+  LLMSimpleDOMExtractorSpecSchema,
   ExtractedValue,
 } from "../../services/dom-extractor";
 import { z } from "zod";
@@ -30,61 +32,105 @@ function loadPrompt(template: string, vars: Record<string, string>) {
 }
 
 type Shape =
-  | "string"
-  | "number"
-  | "boolean"
-  | "null"
-  | "clickAction"
-  | { type: "array"; items: Shape }
-  | { type: "object"; properties: Record<string, Shape> };
+  | string
+  | number
+  | boolean
+  | null
+  | Shape[]
+  | { [key: string]: Shape };
 
-function getShape(value: ExtractedValue): Shape {
-  if (value === null) return "null";
+const MAX_PROMPT_STRING_LENGTH = 240;
+const MAX_PROMPT_ARRAY_ITEMS = 8;
+const MAX_PROMPT_OBJECT_KEYS = 24;
 
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      // ambiguous → treat as unknown array
-      return { type: "array", items: "null" };
-    }
-    return {
-      type: "array",
-      items: getShape(value[0]), // assume homogeneous
-    };
-  }
-
-  switch (typeof value) {
-    case "string":
-      return "string";
-    case "number":
-      return "number";
-    case "boolean":
-      return "boolean";
-    case "object":
-      if (value.type === "clickAction") return "clickAction";
-      return {
-        type: "object",
-        properties: Object.fromEntries(
-          Object.entries(value).map(([k, v]) => [k, getShape(v)]),
-        ),
-      };
-    default:
-      throw new Error("Unsupported type");
-  }
+function clipPromptString(value: string): string {
+  return value.length <= MAX_PROMPT_STRING_LENGTH
+    ? value
+    : `${value.slice(0, MAX_PROMPT_STRING_LENGTH)}...`;
 }
 
-export function recordToShapeJSON(
+function isClickActionValue(value: ExtractedValue): value is ClickActionValue {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "type" in value &&
+    value.type === "clickAction"
+  );
+}
+
+function isInputValue(value: ExtractedValue): value is InputValue {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "type" in value &&
+    value.type === "input"
+  );
+}
+
+function normalizeExtractedValueForPrompt(value: ExtractedValue): Shape {
+  if (
+    value === null ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return clipPromptString(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, MAX_PROMPT_ARRAY_ITEMS)
+      .map((item) => normalizeExtractedValueForPrompt(item));
+  }
+
+  if (isClickActionValue(value)) {
+    return {
+      type: value.type,
+      selector: value.selector,
+    } as { [key: string]: Shape };
+  }
+
+  if (isInputValue(value)) {
+    return Object.fromEntries(
+      Object.entries({
+        ...value,
+        value: value.value ? clipPromptString(value.value) : value.value,
+        options: value.options?.slice(0, MAX_PROMPT_ARRAY_ITEMS),
+      }).filter(([, nestedValue]) => nestedValue !== undefined),
+    ) as { [key: string]: Shape };
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, MAX_PROMPT_OBJECT_KEYS)
+      .map(([key, nestedValue]) => [
+        key,
+        normalizeExtractedValueForPrompt(nestedValue),
+      ]),
+  );
+}
+
+export function recordToPromptJSON(
   input: Record<string, ExtractedValue>,
 ): string {
-  const shape = Object.fromEntries(
-    Object.entries(input).map(([k, v]) => [k, getShape(v)]),
+  const normalized = Object.fromEntries(
+    Object.entries(input).map(([key, value]) => [
+      key,
+      normalizeExtractedValueForPrompt(value),
+    ]),
   );
-  return JSON.stringify(shape, null, 2);
+  return JSON.stringify(normalized, null, 2);
 }
 
 const usabilityViolationsSchema = z.object({
   violations: z.array(
     z.object({
-      ruleId: z.string().min(1),
+      ruleId: z.string(),
       selector: z.string().min(1),
       description: z.string().min(1).max(160),
       resolutionPrompt: z.string().min(1).max(220),
@@ -95,7 +141,7 @@ const usabilityViolationsSchema = z.object({
 const usabilityRuleAuditSystemPrompt = [
   "You are a senior product designer reviewing a UI against a supplied usability rule set.",
   "Use the screenshot to judge visual hierarchy, spacing, affordance, emphasis, density, readability, and state clarity.",
-  "Use the accessibility tree to choose exact selectors from the provided nodes.",
+  "Use the DOM tree to choose exact selectors from the provided nodes.",
   "Report only meaningful issues that would materially improve the interface if fixed.",
   "Prefer issues that affect comprehension, task flow, or interaction clarity over cosmetic nits.",
   "Anchor every issue to the best matching rule from the passed-in rules.",
@@ -109,14 +155,13 @@ const usabilityRuleAuditSystemPrompt = [
 const usabilityOpenEndedSystemPrompt = [
   "You are a sharp product designer critiquing a UI for substantive usability problems.",
   "Inspect the screenshot first for issues in hierarchy, task flow, discoverability, clutter, ambiguous controls, weak state communication, layout imbalance, readability, and accessibility.",
-  "Use the accessibility tree only to map each issue to an exact selector from the provided nodes.",
+  "Use the DOM tree only to map each issue to an exact selector from the provided nodes.",
   "Report the clearest problems that would noticeably improve the product if fixed.",
   "Do not report trivial polish or speculative issues that are not visible or strongly implied.",
   "If multiple symptoms are caused by one larger problem, prefer the higher-level issue.",
-  "Use selector values exactly as provided in the tree.",
+  "Use selector values matching the tree.",
   "Descriptions should be brief, specific, and insight-driven, explaining the actual usability failure.",
   "resolutionPrompt should be a direct instruction to modify the UI so the issue is resolved.",
-  "For ruleId, use the closest matching passed-in rule id when possible; if no rule meaningfully fits, use 'general-usability'.",
   "Return a concise, high-value set of violations, not a long checklist.",
 ].join(" ");
 
@@ -130,7 +175,7 @@ export class ClientAIProvider implements AIProvider {
 
   async generateJsonRender(input: UIRequest): Promise<string> {
     const dom = JSON.stringify(input.snapshot);
-    const data = recordToShapeJSON(input.data);
+    const data = recordToPromptJSON(input.data);
     const promptUser = loadPrompt(uiPromptUser, {
       // dom,
       data,
@@ -172,8 +217,8 @@ export class ClientAIProvider implements AIProvider {
       .join("\n");
     const html = input.markupContext?.html ?? "";
     const styles = JSON.stringify(input.markupContext?.styles ?? [], null, 2);
-    const data = recordToShapeJSON(input.data);
-    const systemPrompt = loadPrompt(markupPromptSystem, { rules });
+    const data = recordToPromptJSON(input.data);
+    const systemPrompt = loadPrompt(markupPromptSystem, {});
     const promptUser = loadPrompt(markupPromptUser, {
       html,
       styles,
@@ -196,15 +241,15 @@ export class ClientAIProvider implements AIProvider {
               type: "text",
               text: promptUser,
             },
-            // ...(input.screenshot
-            //   ? [
-            //       {
-            //         type: "image" as const,
-            //         image: input.screenshot,
-            //         mediaType: "image/jpeg",
-            //       },
-            //     ]
-            //   : []),
+            ...(input.screenshot
+              ? [
+                  {
+                    type: "image" as const,
+                    image: input.screenshot,
+                    mediaType: "image/jpeg",
+                  },
+                ]
+              : []),
           ],
         },
       ],
@@ -218,7 +263,10 @@ export class ClientAIProvider implements AIProvider {
       case "json-render":
         return await this.generateJsonRender(input);
       case "sample":
-        return "a";
+        return `<div class="inline-flex items-center justify-center rounded-full border border-gray-300 bg-white px-5 py-4 shadow-sm">
+  <span class="text-base font-medium tracking-wide text-gray-500">Remaining time</span>
+  <span class="ml-3 text-lg font-semibold tabular-nums text-gray-700">{{data.timer}}</span>
+</div>`;
       case "markup":
         return await this.generateMarkup(input);
     }
@@ -227,22 +275,26 @@ export class ClientAIProvider implements AIProvider {
   async detectUsabilityIssues(
     input: UsabilityDetectionRequest,
   ): Promise<UsabilityViolation[]> {
-    const prompt = [
-      input.useRules
-        ? "Audit the UI against the supplied rule set. Prefer enabled rules first; only use disabled rules if the issue is clearly still valid."
-        : "Identify the most important usability issues you can clearly infer from this UI, even if they are not directly dictated by the supplied rules.",
-      "Rules:",
-      JSON.stringify(input.rules),
-      "Accessibility tree:",
-      JSON.stringify(input.snapshot.tree),
-    ].join("\n\n");
+    const prompt = input.useRules
+      ? [
+          "Audit the UI against the supplied rule set. Prefer enabled rules first; only use disabled rules if the issue is clearly still valid.",
+          "Rules:",
+          JSON.stringify(input.rules),
+          "DOM tree:",
+          input.snapshot.prompt,
+        ].join("\n\n")
+      : [
+          "Audit the UI for any clear usability issues.",
+          "DOM tree:",
+          input.snapshot.prompt,
+        ].join("\n\n");
 
     const result = await generateText({
       model: this.openai("gpt-5.4-mini"),
       providerOptions: {
         openai: {
           reasoningEffort: "low",
-          strictJsonSchema: false,
+          strictJsonSchema: true,
         },
       },
       output: Output.object({
@@ -275,30 +327,44 @@ export class ClientAIProvider implements AIProvider {
   async generateExtractor(
     input: AugmentationRequest,
   ): Promise<DOMExtractorSpec> {
-    const dom = JSON.stringify(input.snapshot);
+    const dom = input.snapshot?.prompt ?? "";
+    const rootSelector = input.snapshot?.selector ?? "";
 
-    const promptSystem = loadPrompt(extractorPromptSystem, {
-      dom,
-    });
+    const promptSystem = loadPrompt(extractorPromptSystem, {});
 
     const promptUser = loadPrompt(extractorPromptUser, {
       dom,
+      prompt: input.prompt,
     });
 
-    const result = await generateText({
-      model: this.openai("gpt-5.4-mini"),
-      providerOptions: {
-        openai: {
-          strictJsonSchema: false,
+    // const result = await generateText({
+    //   model: this.openai("gpt-5.4-mini"),
+    //   providerOptions: {
+    //     openai: {
+    //       strictJsonSchema: false,
+    //     },
+    //   },
+    //   output: Output.object({
+    //     schema: LLMSimpleDOMExtractorSpecSchema,
+    //   }),
+    //   system: promptSystem,
+    //   prompt: promptUser,
+    // });
+
+    const result = {
+      output: {
+        fields: {
+          timer: { type: "text", selector: "div.rounded-full > span" },
         },
       },
-      output: Output.object({
-        schema: DOMExtractorSpecSchema,
-      }),
-      system: promptSystem,
-      prompt: promptUser,
-    });
+    };
 
-    return result.output;
+    return {
+      root: {
+        selector: rootSelector || undefined,
+        output: "SelectedSection",
+      },
+      fields: result.output.fields,
+    };
   }
 }

@@ -7,7 +7,7 @@ import type {
 } from "../types";
 import { logger } from "../utils/logger";
 import { formatSnapshotPrompt, serializeAccessibilityTree } from "./snapshot";
-import { buildElementSelector } from "./selector";
+import { buildElementSelector, buildStructuralSelector } from "./selector";
 
 const MARKUP_ALLOWED_ATTRIBUTES = new Set([
   "id",
@@ -61,7 +61,7 @@ const MAX_MARKUP_HTML_LENGTH = 9000;
 const MAX_MARKUP_STYLE_SNAPSHOTS = 16;
 const MAX_MARKUP_STYLE_JSON_LENGTH = 5000;
 const MAX_MARKUP_DESCENDANTS = 40;
-const SCREENSHOT_SETTLE_DELAY_MS = 180;
+const SCREENSHOT_SETTLE_DELAY_MS = 200;
 
 function isExtensionUiOrUnsafeElement(element: Element): boolean {
   return (
@@ -126,7 +126,9 @@ function getStyleSnapshotForElement(element: HTMLElement): MarkupStyleSnapshot {
   );
 
   return {
-    selector: buildElementSelector(element, element.ownerDocument),
+    selector:
+      buildElementSelector(element, element.ownerDocument) ||
+      buildStructuralSelector(element, element.ownerDocument),
     tagName: element.tagName.toLowerCase(),
     styles,
   };
@@ -134,7 +136,10 @@ function getStyleSnapshotForElement(element: HTMLElement): MarkupStyleSnapshot {
 
 function collectStyleSnapshots(root: HTMLElement): MarkupStyleSnapshot[] {
   const styleSnapshots: MarkupStyleSnapshot[] = [];
-  const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
+  const elements = [
+    root,
+    ...Array.from(root.querySelectorAll<HTMLElement>("*")),
+  ];
 
   for (const element of elements) {
     if (styleSnapshots.length >= MAX_MARKUP_STYLE_SNAPSHOTS) {
@@ -182,7 +187,7 @@ export function inspectSelectedDomTree(
     return null;
   }
 
-  const element = document.body; // resolveSelectedElement(selectedElement, root);
+  const element = resolveSelectedElement(selectedElement, root);
 
   if (!element) {
     logger.warn(
@@ -201,13 +206,16 @@ export function inspectSelectedDomTree(
     selector: selectedElement.selector,
     pageUrl: selectedElement.pageUrl,
     tree,
-    prompt: formatSnapshotPrompt(selectedElement.selector, tree),
+    prompt: root.querySelector(selectedElement.selector)?.outerHTML || "",
   };
 
-  // logger.info(
-  //   "Stubbed DOM tree snapshot for augmentation request.",
-  //   JSON.stringify(snapshot),
-  // );
+  console.log(root.querySelector(selectedElement.selector)?.outerHTML || "");
+
+  console.log(formatSnapshotPrompt(selectedElement.selector, tree));
+  logger.info(
+    "Stubbed DOM tree snapshot for augmentation request.",
+    JSON.stringify(snapshot),
+  );
 
   return snapshot;
 }
@@ -255,12 +263,14 @@ export function inspectPageDomTree(
   const tree = serializeAccessibilityTree(element);
   const selector = "body";
 
+  console.log(element.outerHTML);
+
   return {
     selectedElementId: "page-root",
     selector,
     pageUrl: window.location.href,
     tree,
-    prompt: formatSnapshotPrompt(selector, tree),
+    prompt: element?.outerHTML || "",
   };
 }
 
