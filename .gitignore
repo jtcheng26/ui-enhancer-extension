@@ -38,3 +38,5 @@ web-ext.config.ts
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+results
+tests/outputs

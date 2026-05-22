@@ -238,6 +238,7 @@ export function FloatingWindow({
                 className="z-100 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-lg leading-none text-white transition hover:bg-white/20"
                 type="button"
                 onClick={onClose}
+                data-testid="ai-ui-close-popup"
               >
                 ×
               </button>
