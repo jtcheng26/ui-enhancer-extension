@@ -6,10 +6,14 @@ Follow these replacement workflow rules.
 ## Shared Replacement Workflow
 
 1. Choose the smallest effective intervention.
-   - Prefer `injectCss` when adequate selectors exist and the task is simple styling: spacing, color, typography, borders, sizing, visibility, alignment, emphasis, or state clarity.
+   - Prefer `injectCss` when adequate selectors exist and the task is simple styling: spacing, color, typography, borders, sizing, visibility, alignment, emphasis, contrast, or state clarity.
+   - If the request only changes styling of existing elements, use CSS unless CSS cannot target the element or cannot preserve the needed behavior.
    - Use UI replacement when content must be reorganized, controls or components must move, data must be reshaped, or interactions must be rebuilt.
    - Use UI replacement with companion CSS when the new fragment also needs page-level styling around existing elements.
    - Do not create a replacement UI when CSS alone can solve the task cleanly.
+   - Do not redesign surrounding UI. Do not alter unrelated backgrounds, layouts, titles, cards, navigation, images, labels, or actions. If an element is not part of the requested change, preserve its content, position, relative hierarchy, and visual role.
+   - Moving an element means relocating the existing element, not removing it or replacing it with a different concept. De-emphasizing an enabled control means reducing visual weight without making it look disabled.
+   - When the request asks for stronger hierarchy, contrast, scannability, readability, emphasis, or state differentiation, make the change visibly noticeable in the rendered screenshot. Prefer a tasteful but clear step change over barely perceptible tweaks.
 
 2. Choose replacement roots when UI replacement is needed.
    - Replace only HTML subtrees, never the whole page unless the task truly requires it.
@@ -20,6 +24,7 @@ Follow these replacement workflow rules.
 3. Extract source data when UI replacement is needed.
    - For each replacement root, create the smallest useful extractor spec and call `createExtractor`.
    - Capture only important visible content, URLs, actions, inputs, and repeated items needed to rebuild the UI.
+   - If replacing a root that contains buttons, links, images, tabs, stats, usernames, labels, badges, inputs, state indicators, or repeated items, extract those fields so they can be preserved.
    - The browser extension executes `createExtractor` against the live DOM and returns extracted data, reference context, or validation errors.
    - Inspect the returned data before drafting. If it is missing important content, has the wrong shape, includes noisy/duplicated fields, loses required actions/inputs, or does not match the reference context, revise the extractor and call `createExtractor` again.
    - Only move to `renderUiDraft` once the extracted data is good enough to rebuild the selected root faithfully.
@@ -53,6 +58,7 @@ CSS rules:
 - For CSS-only fixes, draft the CSS first and call `renderCssDraft` with the affected root selector.
 - The browser extension will temporarily place the CSS in the document `<head>` and return a screenshot of the affected element.
 - Inspect the rendered CSS screenshot for visible issues a human reviewer would notice: unintended layout shifts, poor spacing, weak contrast, awkward sizing, clipped text, or mismatched page style.
+- For hierarchy, contrast, readability, emphasis, or input-state tasks, confirm the intended visual difference is obvious at a glance. If filled values, placeholders, inactive fields, selected states, or primary actions still look too similar, increase the contrast or hierarchy within the page's visual language.
 - After a CSS draft screenshot, either call `injectCss` with that CSS if it looks good or revise the CSS and call `renderCssDraft` again.
 - Output real stylesheet CSS exactly as it would appear in a `.css` file, not inline style declarations.
 - Every CSS rule must include the full selector it applies to, because the CSS lives in `<head>` and is not attached to an element inline.
@@ -60,6 +66,7 @@ CSS rules:
 - Keep CSS scoped to the affected selectors; avoid broad selectors such as `body *`, global resets, or unrelated page-wide changes.
 - Do not use `@import`, remote assets, JavaScript URLs, or style tags.
 - CSS may style existing content without replacing or hiding it.
+- If the rendered CSS screenshot does not visibly show the requested change, revise the selector or CSS before final injection.
 
 4. Draft and preview the replacement when UI replacement is needed.
    - Draft a single HTML fragment for the selected subtree: no `<!DOCTYPE>`, `html`, `head`, or `body`.
@@ -70,6 +77,7 @@ CSS rules:
    - Keep the result polished, accessible, responsive, and visually consistent with the host page.
    - Before injection, call `renderUiDraft` with the draft HTML. The browser extension will temporarily render it and return a screenshot.
    - Inspect the rendered screenshot for visible issues a human reviewer would notice: weak hierarchy, generic card layouts, awkward density, inconsistent spacing, poor visual fit with the host page, low accessibility, text overflow, and unclear actions.
+   - Before final injection, verify from the rendered screenshot that the requested target visibly changed, hierarchy/contrast/state differences are obvious enough to scan at a glance, no required visible content disappeared, no primary action/navigation/media/label/username/title/price/state indicator/input affordance was removed, text remains legible, no tappable/control elements overlap, repeated components remain consistent, and the result still matches the original page's visual language.
    - You may preview up to three drafts total across UI and CSS drafts. After each draft screenshot, either call `injectUi`/`injectCss` if it looks good or revise and call `renderUiDraft`/`renderCssDraft` again.
    - After the third draft screenshot, call the matching final injection tool; do not request another draft.
    - If the final UI also needs CSS affecting existing page elements, include it in the optional `css` field of `injectUi`.

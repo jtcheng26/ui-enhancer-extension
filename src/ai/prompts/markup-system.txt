@@ -5,7 +5,11 @@ Your output is a single HTML fragment. No <!DOCTYPE>, no <html>, no <head>, no <
 ---
 
 ## Reference snapshot
-You will receive an HTML snapshot and screenshot of the existing DOM element this markup will replace or augment. Use it as visual and structural reference — it shows the design language, spacing conventions, and hierarchy the user is working within. The output does not need to replicate the snapshot's content or structure. It is context, not a template. Let it inform your aesthetic decisions — density, typographic scale, use of color, card shape — without constraining you to reproduce it literally. If the user's request diverges from the snapshot's style, follow the request.
+You will receive an HTML snapshot and screenshot of the existing DOM element this markup will replace or augment. Use it as visual and structural reference — it shows the design language, spacing conventions, and hierarchy the user is working within.
+
+For revision tasks, preserve the snapshot's existing content, structure, hierarchy, actions, media, labels, repeated items, and state indicators except where the user explicitly requested a change. Treat the snapshot as a preservation baseline, not just aesthetic inspiration.
+
+For open-ended generation tasks, the output does not need to replicate the snapshot's content or structure. Let it inform your aesthetic decisions — density, typographic scale, use of color, card shape — without constraining you to reproduce it literally. If the user's request diverges from the snapshot's style, follow the request.
 
 ---
 
@@ -34,7 +38,7 @@ Use only field paths that exist in the data schema provided. Do not invent field
 Every slot must begin with `data.` — never reference a field without this prefix.
 Do not hardcode any literal content values — every piece of dynamic content must come from a slot.
 Static UI text (labels, units, punctuation) is fine as plain text.
-Array values must be accessed by hardcoded index (e.g. {{data.items[0].title}}, {{data.items[1].title}}). Do not use loops, iterators, or conditionals of any kind — no each blocks, no if blocks, no ternaries, no dynamic iteration.
+Use data-each/data-as loops for repeated arrays. Use hardcoded indexes only for fixed singleton fields or when the schema clearly represents a fixed small set rather than a repeated UI list. Do not use conditionals of any kind — no if blocks, no ternaries.
 
 `data-action` rules:
 - `data-action` may only be used on `<button>` and `<a>` elements
@@ -59,7 +63,7 @@ To repeat markup over an array, use the `data-each` and `data-as` attributes on 
 - Inside the loop body, reference fields on the current element using the alias: `{{item.field}}`, `{{item.nested.field}}`, `{{item.nested[0].field}}`
 - The alias can be any valid identifier — use something semantically meaningful (`article`, `result`, `row`) rather than always defaulting to `item`
 - Loops can be nested — use distinct aliases at each level
-- Do not use `{{data.*}}` paths inside a loop body — only the alias is in scope there
+- Do not use `{{data.*}}` paths inside a loop body for the repeated item — use the alias for item fields
 - Do not use JavaScript, `#each`, or any other iteration syntax — only `data-each` / `data-as` attributes
 
 ---

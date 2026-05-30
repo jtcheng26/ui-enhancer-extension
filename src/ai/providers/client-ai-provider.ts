@@ -3,6 +3,7 @@ import {
   UiGenerationAgentCommandPayload,
   UiGenerationAgentMode,
   UiGenerationAgentResponse,
+  UiGenerationAgentTokenUsage,
   UsabilityViolation,
 } from "@/types";
 import {
@@ -308,6 +309,20 @@ type AgentToolStage =
 
 function toJsonValue(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as any;
+}
+
+function normalizeTokenUsage(usage: unknown): UiGenerationAgentTokenUsage {
+  const raw = usage as Partial<UiGenerationAgentTokenUsage> | undefined;
+
+  return {
+    inputTokens: raw?.inputTokens,
+    inputTokenDetails: raw?.inputTokenDetails,
+    outputTokens: raw?.outputTokens,
+    outputTokenDetails: raw?.outputTokenDetails,
+    totalTokens: raw?.totalTokens,
+    reasoningTokens: raw?.reasoningTokens,
+    cachedInputTokens: raw?.cachedInputTokens,
+  };
 }
 
 function normalizeAgentViolations(
@@ -755,7 +770,7 @@ export class ClientAIProvider implements AIProvider {
   ) {
     return new ToolLoopAgent({
       id: "ui-generation-agent",
-      model: this.openai("gpt-5.4-mini"),
+      model: this.openai("gpt-5.4"),
       instructions: getAgentInstructions(mode),
       providerOptions: {
         openai: {
@@ -1155,7 +1170,7 @@ export class ClientAIProvider implements AIProvider {
     console.log(jsonRenderSystemPrompt);
     console.log(promptUser);
     const result = await generateText({
-      model: this.openai("gpt-5.4-mini"),
+      model: this.openai("gpt-5.4"),
       providerOptions: {
         openai: {
           reasoningEffort: "low",
@@ -1197,10 +1212,10 @@ export class ClientAIProvider implements AIProvider {
       prompt: input.prompt,
     });
     const result = await generateText({
-      model: this.openai("gpt-5.4-mini"),
+      model: this.openai("gpt-5.4"),
       providerOptions: {
         openai: {
-          reasoningEffort: "low",
+          reasoningEffort: "medium",
         },
       },
       system: systemPrompt,
@@ -1261,7 +1276,7 @@ export class ClientAIProvider implements AIProvider {
         ].join("\n\n");
 
     const result = await generateText({
-      model: this.openai("gpt-5.4-mini"),
+      model: this.openai("gpt-5.4"),
       providerOptions: {
         openai: {
           reasoningEffort: "low",
@@ -1309,11 +1324,11 @@ export class ClientAIProvider implements AIProvider {
     });
 
     const result = await generateText({
-      model: this.openai("gpt-5.4-mini"),
+      model: this.openai("gpt-5.4"),
       providerOptions: {
         openai: {
           strictJsonSchema: false,
-          reasoningEffort: "low",
+          reasoningEffort: "medium",
         },
       },
       output: Output.object({
