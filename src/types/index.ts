@@ -156,10 +156,28 @@ export interface UiGenerationAgentCommandPayload {
   draftRenderResult?: UiGenerationAgentDraftRenderResult;
 }
 
+export interface UiGenerationAgentTokenUsage {
+  inputTokens?: number;
+  inputTokenDetails?: {
+    noCacheTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+  };
+  outputTokens?: number;
+  outputTokenDetails?: {
+    textTokens?: number;
+    reasoningTokens?: number;
+  };
+  totalTokens?: number;
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
+}
+
 export type UiGenerationAgentResponse =
   | {
       status: "needsApproval";
       messages: ModelMessage[];
+      usage?: UiGenerationAgentTokenUsage;
       approvalId: string;
       toolCallId: string;
       violations: UsabilityViolation[];
@@ -167,12 +185,14 @@ export type UiGenerationAgentResponse =
   | {
       status: "needsExtractorResult";
       messages: ModelMessage[];
+      usage?: UiGenerationAgentTokenUsage;
       toolCallId: string;
       extractor: DOMExtractorSpec;
     }
   | {
       status: "needsDraftRender";
       messages: ModelMessage[];
+      usage?: UiGenerationAgentTokenUsage;
       toolCallId: string;
       kind: "ui";
       extractor: DOMExtractorSpec;
@@ -181,6 +201,7 @@ export type UiGenerationAgentResponse =
   | {
       status: "needsDraftRender";
       messages: ModelMessage[];
+      usage?: UiGenerationAgentTokenUsage;
       toolCallId: string;
       kind: "css";
       css: UiGenerationAgentCssInjection;
@@ -188,6 +209,7 @@ export type UiGenerationAgentResponse =
   | {
       status: "readyToInject";
       messages: ModelMessage[];
+      usage?: UiGenerationAgentTokenUsage;
       toolCallId: string;
       extractor: DOMExtractorSpec;
       spec: string;
@@ -196,17 +218,20 @@ export type UiGenerationAgentResponse =
   | {
       status: "readyToInjectCss";
       messages: ModelMessage[];
+      usage?: UiGenerationAgentTokenUsage;
       toolCallId: string;
       css: UiGenerationAgentCssInjection;
     }
   | {
       status: "done";
       messages: ModelMessage[];
+      usage?: UiGenerationAgentTokenUsage;
       text: string;
     }
   | {
       status: "error";
       messages: ModelMessage[];
+      usage?: UiGenerationAgentTokenUsage;
       error: string;
     };
 

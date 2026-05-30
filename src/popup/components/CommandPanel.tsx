@@ -26,6 +26,7 @@ import type {
   UiGenerationAgentCssInjection,
   UiGenerationAgentMode,
   UiGenerationAgentResponse,
+  UiGenerationAgentTokenUsage,
   UsabilityGenerationTask,
   UsabilityViolation,
 } from "../../types";
@@ -98,6 +99,14 @@ interface AgentWorkflowState {
 interface ActiveAgentRequest {
   prompt: string;
   mode: UiGenerationAgentMode;
+}
+
+interface AgentTokenUsageSummary {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  reasoningTokens: number;
+  cachedInputTokens: number;
 }
 
 type AgentGeneratedArtifact =
@@ -207,6 +216,13 @@ export function CommandPanel({
   const injectedAgentArtifactsRef = useRef<
     Record<string, AgentGeneratedArtifact>
   >({});
+  const agentTokenUsageRef = useRef<AgentTokenUsageSummary>({
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    reasoningTokens: 0,
+    cachedInputTokens: 0,
+  });
 
   const isPopup = surface === "popup";
   const isFloating = mode === "floating";
@@ -225,6 +241,40 @@ export function CommandPanel({
 
   function logAgentStep(type: string, payload?: unknown) {
     appendAgentRunLog(agentRunLogRef.current, type, payload);
+  }
+
+  function resetAgentTokenUsage() {
+    agentTokenUsageRef.current = {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      reasoningTokens: 0,
+      cachedInputTokens: 0,
+    };
+  }
+
+  function recordAgentTokenUsage(usage: UiGenerationAgentTokenUsage) {
+    const next = {
+      inputTokens:
+        agentTokenUsageRef.current.inputTokens + (usage.inputTokens ?? 0),
+      outputTokens:
+        agentTokenUsageRef.current.outputTokens + (usage.outputTokens ?? 0),
+      totalTokens:
+        agentTokenUsageRef.current.totalTokens + (usage.totalTokens ?? 0),
+      reasoningTokens:
+        agentTokenUsageRef.current.reasoningTokens +
+        (usage.outputTokenDetails?.reasoningTokens ??
+          usage.reasoningTokens ??
+          0),
+      cachedInputTokens:
+        agentTokenUsageRef.current.cachedInputTokens +
+        (usage.inputTokenDetails?.cacheReadTokens ??
+          usage.cachedInputTokens ??
+          0),
+    };
+
+    agentTokenUsageRef.current = next;
+    return next;
   }
 
   function updateUsabilityGenerationQueue(tasks: UsabilityGenerationTask[]) {
@@ -494,7 +544,17 @@ export function CommandPanel({
       logAgentStep("agent_response", {
         status: response.status,
         iteration: iterationCount,
+        usage: response.usage,
       });
+
+      if (response.usage) {
+        logAgentStep("token_usage", {
+          status: response.status,
+          iteration: iterationCount,
+          usage: response.usage,
+          cumulative: recordAgentTokenUsage(response.usage),
+        });
+      }
 
       switch (response.status) {
         case "needsApproval": {
@@ -868,6 +928,7 @@ export function CommandPanel({
           setUsabilityStatusMessage(response.text || "The agent finished.");
           logAgentStep("run_done", {
             text: response.text,
+            tokenUsage: agentTokenUsageRef.current,
           });
           setAgentWorkflow(null);
           activeAgentRequestRef.current = null;
@@ -892,6 +953,7 @@ export function CommandPanel({
     logAgentStep("run_stopped", {
       reason: "iteration_limit_or_empty_response",
       iterations: iterationCount,
+      tokenUsage: agentTokenUsageRef.current,
     });
     setAgentWorkflow(null);
     activeAgentRequestRef.current = null;
@@ -908,6 +970,7 @@ export function CommandPanel({
     const agentRequest = getAgentRequest();
     activeAgentRequestRef.current = agentRequest;
     injectedAgentArtifactsRef.current = {};
+    resetAgentTokenUsage();
     agentRunLogRef.current = startAgentRunLog({
       prompt: agentRequest.prompt,
       mode: agentRequest.mode,

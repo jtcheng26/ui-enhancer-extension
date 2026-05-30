@@ -62,6 +62,7 @@ const MAX_PROMPT_STRING_LENGTH = 240;
 const MAX_PROMPT_ARRAY_ITEMS = 8;
 const MAX_PROMPT_OBJECT_KEYS = 24;
 const MAX_AGENT_DRAFT_RENDERS = 3;
+const MIN_COMPLEX_REVISION_DRAFT_RENDERS = 2;
 const MAX_RENDERED_DRAFT_HTML_LENGTH = 6000;
 const DEFAULT_AGENT_AUDIT_PROMPT = "Fix usability and design issues in the UI";
 
@@ -222,7 +223,9 @@ const agentRenderUiDraftInputSchema = z.object({
     .string()
     .max(400)
     .optional()
-    .describe("Optional notes about what the draft is trying to improve."),
+    .describe(
+      "Optional notes about what the draft is trying to improve. For multi-part revisions, briefly list the requested parts covered, including any typography, hierarchy, contrast, spacing, and interaction changes.",
+    ),
 });
 
 const agentRenderCssDraftInputSchema = z.object({
@@ -246,7 +249,9 @@ const agentRenderCssDraftInputSchema = z.object({
     .string()
     .max(400)
     .optional()
-    .describe("Optional notes about what the CSS draft is trying to improve."),
+    .describe(
+      "Optional notes about what the CSS draft is trying to improve. For multi-part revisions, briefly list the requested parts covered, including any typography, hierarchy, contrast, spacing, and interaction changes.",
+    ),
 });
 
 const agentInjectCssInputSchema = z.object({
@@ -344,6 +349,16 @@ function createAgentUserMessage(
     "User request:",
     prompt,
     "",
+    ...(getAgentMode(input) === "revision"
+      ? [
+          "Revision completion requirements:",
+          "- Treat every explicit clause in the request as a requirement, including styling, hierarchy, spacing, and interaction changes.",
+          "- Do not finish after only the easiest structural change; verify that typography, contrast, prominence, and de-emphasis requirements are also visibly handled.",
+          "- In draft notes, summarize which requested parts are covered and which visual hierarchy changes were made.",
+          "",
+        ]
+      : []),
+    "",
     "Current page DOM snapshot:",
     input.snapshot?.prompt ?? "(No DOM snapshot was available.)",
     "",
@@ -376,6 +391,28 @@ function getAgentMode(input: UiGenerationAgentCommandPayload) {
     input.mode ??
     (prompt && prompt !== DEFAULT_AGENT_AUDIT_PROMPT ? "revision" : "audit")
   );
+}
+
+function isComplexRevisionPrompt(input: UiGenerationAgentCommandPayload) {
+  if (getAgentMode(input) !== "revision") {
+    return false;
+  }
+
+  const prompt = input.prompt.trim().toLowerCase();
+  if (!prompt) {
+    return false;
+  }
+
+  const actionMatches = prompt.match(
+    /\b(increase|decrease|reduce|make|convert|change|move|adjust|add|remove|replace|fix|improve|emphasize|de-emphasize|differentiate|selects?|padding|font|weight|size|prominence|hierarchy|contrast|dropdown)\b/g,
+  );
+  const hasMultipleClauses = /[,;:]|\band\b|\bwhile\b|\bplus\b/.test(prompt);
+
+  return hasMultipleClauses && (actionMatches?.length ?? 0) >= 3;
+}
+
+function getMinimumDraftRenders(input: UiGenerationAgentCommandPayload) {
+  return isComplexRevisionPrompt(input) ? MIN_COMPLEX_REVISION_DRAFT_RENDERS : 1;
 }
 
 function getAgentInstructions(mode: UiGenerationAgentMode) {
@@ -610,17 +647,23 @@ function createDraftRenderToolResultMessage(
 
 function createDraftRenderReferenceMessage(
   result: UiGenerationAgentCommandPayload["draftRenderResult"],
+  minimumDraftRenders: number,
+  draftCount: number,
 ): ModelMessage | null {
   if (!result?.success || !result.screenshot) {
     return null;
   }
+
+  const mustReviewAgain = draftCount < minimumDraftRenders;
 
   return {
     role: "user",
     content: [
       {
         type: "text",
-        text: "Rendered screenshot of your draft. If it looks good, call the matching final injection tool with this draft. If you see visible design problems, revise and call renderUiDraft or renderCssDraft again. You may preview at most three drafts total.",
+        text: mustReviewAgain
+          ? "Rendered screenshot of your draft. This is a complex revision, so do not inject yet. Review every requested subtask against the screenshot, especially typography, hierarchy, contrast, spacing, and de-emphasis changes that are easy to miss. Submit a revised renderUiDraft or renderCssDraft next, even if the structural change looks correct."
+          : "Rendered screenshot of your draft. If it looks good and every requested subtask is visibly complete, call the matching final injection tool with this draft. If any requested hierarchy, typography, spacing, contrast, or interaction change is missing or too subtle, revise and call renderUiDraft or renderCssDraft again. You may preview at most three drafts total.",
       },
       {
         type: "image",
@@ -681,6 +724,15 @@ function getAgentToolControls(input: UiGenerationAgentCommandPayload): {
 
   if (input.draftRenderResult?.success === true) {
     const draftCount = countDraftRenderCalls(input.messages);
+    const minimumDraftRenders = getMinimumDraftRenders(input);
+
+    if (draftCount < minimumDraftRenders) {
+      return {
+        stage: "draft",
+        activeTools: ["renderUiDraft", "renderCssDraft"],
+        toolChoice: "required",
+      };
+    }
 
     if (draftCount < MAX_AGENT_DRAFT_RENDERS) {
       return {
@@ -770,7 +822,7 @@ export class ClientAIProvider implements AIProvider {
   ) {
     return new ToolLoopAgent({
       id: "ui-generation-agent",
-      model: this.openai("gpt-5.4"),
+      model: this.openai("gpt-5.4-mini"),
       instructions: getAgentInstructions(mode),
       providerOptions: {
         openai: {
@@ -871,6 +923,8 @@ export class ClientAIProvider implements AIProvider {
 
     const draftRenderReferenceMessage = createDraftRenderReferenceMessage(
       input.draftRenderResult,
+      getMinimumDraftRenders(input),
+      countDraftRenderCalls(input.messages),
     );
     if (draftRenderReferenceMessage) {
       messages.push(draftRenderReferenceMessage);
@@ -1170,7 +1224,7 @@ export class ClientAIProvider implements AIProvider {
     console.log(jsonRenderSystemPrompt);
     console.log(promptUser);
     const result = await generateText({
-      model: this.openai("gpt-5.4"),
+      model: this.openai("gpt-5.4-mini"),
       providerOptions: {
         openai: {
           reasoningEffort: "low",
@@ -1212,7 +1266,7 @@ export class ClientAIProvider implements AIProvider {
       prompt: input.prompt,
     });
     const result = await generateText({
-      model: this.openai("gpt-5.4"),
+      model: this.openai("gpt-5.4-mini"),
       providerOptions: {
         openai: {
           reasoningEffort: "medium",
@@ -1276,7 +1330,7 @@ export class ClientAIProvider implements AIProvider {
         ].join("\n\n");
 
     const result = await generateText({
-      model: this.openai("gpt-5.4"),
+      model: this.openai("gpt-5.4-mini"),
       providerOptions: {
         openai: {
           reasoningEffort: "low",
@@ -1324,7 +1378,7 @@ export class ClientAIProvider implements AIProvider {
     });
 
     const result = await generateText({
-      model: this.openai("gpt-5.4"),
+      model: this.openai("gpt-5.4-mini"),
       providerOptions: {
         openai: {
           strictJsonSchema: false,

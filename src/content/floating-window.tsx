@@ -16,7 +16,7 @@ interface FloatingWindowProps {
 }
 
 const DEFAULT_POSITION = { x: 24, y: 24 };
-const DEFAULT_SIZE = { width: 440, height: 700 };
+const DEFAULT_SIZE = { width: 320, height: 700 };
 const MIN_SIZE = { width: 320, height: 320 };
 
 type ResizeEdge = "e" | "s" | "se" | null;
@@ -176,7 +176,7 @@ export function FloatingWindow({
         className="fixed bottom-6 left-1/2 z-[2147483647] -translate-x-1/2"
         style={{ display: isUiHiddenForCapture ? "none" : undefined }}
       >
-        <div className="w-[min(380px,calc(100vw-24px))] rounded-[26px] bg-slate-900/20 p-[6px] backdrop-blur-md shadow-[0_24px_60px_rgba(15,23,42,0.28)]">
+        <div className="w-[min(300px,calc(100vw-24px))] rounded-[26px] bg-slate-900/20 p-[6px] backdrop-blur-md shadow-[0_24px_60px_rgba(15,23,42,0.28)]">
           <div className="relative overflow-hidden rounded-[22px] bg-slate-800">
             <PopupApp
               mode="floating"
