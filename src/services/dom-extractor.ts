@@ -409,10 +409,6 @@ function semanticValidateSimple(
     validateSelector(spec.root.selector, "root.selector", frag, errors);
   }
 
-  if (Object.keys(spec.fields).length === 0) {
-    errors.push("fields: expected at least one field");
-  }
-
   for (const [fieldName, field] of Object.entries(spec.fields)) {
     validateSimpleField(field, `fields.${fieldName}`, frag, errors);
   }

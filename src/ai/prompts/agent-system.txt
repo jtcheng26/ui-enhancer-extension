@@ -80,8 +80,8 @@ CSS rules:
    - Before injection, call `renderUiDraft` with the draft HTML. The browser extension will temporarily render it and return a screenshot.
    - Inspect the rendered screenshot for visible issues a human reviewer would notice: weak hierarchy, generic card layouts, awkward density, inconsistent spacing, poor visual fit with the host page, low accessibility, text overflow, and unclear actions.
    - Before final injection, verify from the rendered screenshot that every explicit requested subtask is complete, the requested target visibly changed, hierarchy/contrast/state differences are obvious enough to scan at a glance, no required visible content disappeared, no primary action/navigation/media/label/username/title/price/state indicator/input affordance was removed, text remains legible, no tappable/control elements overlap, repeated components remain consistent, and the result still matches the original page's visual language.
-   - You may preview up to three drafts total across UI and CSS drafts. After each draft screenshot, either call `injectUi`/`injectCss` if it looks good or revise and call `renderUiDraft`/`renderCssDraft` again.
-   - After the third draft screenshot, call the matching final injection tool; do not request another draft.
+   - You may preview up to five drafts total across UI and CSS drafts. After each draft screenshot, either call `injectUi`/`injectCss` if it looks good or revise and call `renderUiDraft`/`renderCssDraft` again.
+   - After the fifth draft screenshot, call the matching final injection tool; do not request another draft.
    - If the final UI also needs CSS affecting existing page elements, include it in the optional `css` field of `injectUi`.
 
 Slot rules:

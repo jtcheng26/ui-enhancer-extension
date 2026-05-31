@@ -199,7 +199,7 @@ export function CommandPanel({
   const isBusy = generationStep !== null || isDetectingUsability;
   const [requestSettings, setRequestSettings] = useState<RequestSettings>({
     strategy: "markup",
-    useUsabilityRules: false,
+    useUsabilityRules: true,
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [
@@ -741,7 +741,9 @@ export function CommandPanel({
               toolCallId: draftRenderRequest.toolCallId,
               kind: draftRenderRequest.kind,
               error:
-                error instanceof Error ? error.message : "Draft rendering failed.",
+                error instanceof Error
+                  ? error.message
+                  : "Draft rendering failed.",
             });
             response = await runUiGenerationAgent({
               ...getActiveAgentRequest(),
@@ -1007,6 +1009,10 @@ export function CommandPanel({
       const response = await runUiGenerationAgent({
         ...agentRequest,
         source: surface,
+        useRules:
+          agentRequest.mode === "audit"
+            ? requestSettings.useUsabilityRules
+            : undefined,
         snapshot: context.snapshot,
         screenshot: context.screenshot,
       });
@@ -1018,7 +1024,8 @@ export function CommandPanel({
         error instanceof Error ? error.message : "The agent workflow failed.",
       );
       logAgentStep("run_exception", {
-        error: error instanceof Error ? error.message : "The agent workflow failed.",
+        error:
+          error instanceof Error ? error.message : "The agent workflow failed.",
       });
       return false;
     } finally {
@@ -1081,18 +1088,6 @@ export function CommandPanel({
     }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!prompt.trim()) {
-      return;
-    }
-
-    await clearUsabilityReview();
-    setAgentWorkflow(null);
-    await runGenerationPipeline(prompt, selectedElement);
-  }
-
   function handleCancelLoading() {
     logAgentStep("run_cancelled");
     submissionVersionRef.current += 1;
@@ -1132,14 +1127,6 @@ export function CommandPanel({
     return USE_EXAMPLE_VIOLATIONS_FOR_ACKNOWLEDGEMENT
       ? (exampleViolationsSpec.violations as UsabilityViolation[])
       : detectedViolations;
-  }
-
-  async function getViolationsForReview() {
-    if (USE_EXAMPLE_VIOLATIONS_FOR_ACKNOWLEDGEMENT) {
-      return exampleViolationsSpec.violations as UsabilityViolation[];
-    }
-
-    return detectUsabilityIssues(surface, requestSettings.useUsabilityRules);
   }
 
   function buildUsabilityGenerationPrompt(violations: UsabilityViolation[]) {
@@ -1211,67 +1198,6 @@ export function CommandPanel({
     );
     updateUsabilityGenerationQueue(nextQueue);
     updateActiveUsabilityGenerationTaskId(null);
-  }
-
-  async function showDetectedViolations(
-    violations: UsabilityViolation[],
-    options: {
-      skipAcknowledgement?: boolean;
-    } = {},
-  ) {
-    if (options.skipAcknowledgement) {
-      await acknowledgeDetectedViolations(violations);
-      return;
-    }
-
-    setUsabilityReview({ violations });
-    await showUsabilityViolationHighlights(violations);
-  }
-
-  async function handleDetectUsabilityIssues(options?: {
-    skipAcknowledgement?: boolean;
-  }) {
-    setIsDetectingUsability(true);
-    await clearUsabilityReview();
-    setAgentWorkflow(null);
-
-    try {
-      const violations = USE_EXAMPLE_VIOLATIONS_FOR_ACKNOWLEDGEMENT
-        ? await getViolationsForReview()
-        : await (async () => {
-            let context = null;
-
-            if (runWithUiHidden) {
-              setIsCapturingUsabilityContext(true);
-
-              try {
-                context = await runWithUiHidden(() =>
-                  getUsabilityDetectionContext(),
-                );
-              } finally {
-                setIsCapturingUsabilityContext(false);
-              }
-            }
-
-            return detectUsabilityIssues(
-              surface,
-              requestSettings.useUsabilityRules,
-              context ?? undefined,
-            );
-          })();
-
-      if (violations.length === 0) {
-        setUsabilityStatusMessage(
-          "No clear usability issues were detected on the page.",
-        );
-        return;
-      }
-
-      await showDetectedViolations(violations, options);
-    } finally {
-      setIsCapturingUsabilityContext(false);
-      setIsDetectingUsability(false);
-    }
   }
 
   async function handleAcknowledgeUsabilityIssues() {
@@ -1640,16 +1566,33 @@ export function CommandPanel({
           </label>
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-            <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
-              <input
-                data-testid="agent-skip-approvals-checkbox"
-                className="h-4 w-4 rounded border-slate-300 text-slate-950"
-                type="checkbox"
-                checked={skipApprovals}
-                onChange={(event) => setSkipApprovals(event.target.checked)}
-              />
-              Skip approvals
-            </label>
+            <div className="flex flex-wrap gap-2">
+              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
+                <input
+                  data-testid="agent-skip-approvals-checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-slate-950"
+                  type="checkbox"
+                  checked={skipApprovals}
+                  onChange={(event) => setSkipApprovals(event.target.checked)}
+                />
+                Skip approvals
+              </label>
+              <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700">
+                <input
+                  data-testid="agent-use-rules-checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-slate-950"
+                  type="checkbox"
+                  checked={requestSettings.useUsabilityRules}
+                  onChange={(event) =>
+                    setRequestSettings((current) => ({
+                      ...current,
+                      useUsabilityRules: event.target.checked,
+                    }))
+                  }
+                />
+                Rules audit
+              </label>
+            </div>
             <button
               data-testid="agent-flow-button"
               className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:translate-y-0 disabled:opacity-60 cursor-pointer"
@@ -1750,7 +1693,10 @@ export function CommandPanel({
           <div className="grid max-h-56 gap-2 overflow-auto">
             {persistedAugmentations.length === 0 ? (
               <div className="rounded-2xl border border-slate-900/8 bg-slate-50/80 p-4">
-                <p className="text-sm leading-6 text-slate-600">
+                <p
+                  className="text-sm leading-6 text-slate-600"
+                  data-testid="failed-gen"
+                >
                   No saved versions yet. Generate a preview above and save the
                   ones you want to keep.
                 </p>

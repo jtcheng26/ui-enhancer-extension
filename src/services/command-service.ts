@@ -19,7 +19,7 @@ import {
 } from "./dom-inspection-service";
 import { DOMExtractorSpec, ExtractedValue } from "./dom-extractor";
 import { RenderSystemId } from "./renderer/renderer";
-import rulesSpec from "../ai/prompts/rules.json";
+import rulesSpec from "../ai/prompts/specific-usability-rules.json";
 
 interface SubmitAugmentationRequestOptions {
   selectedElement?: SelectedElement | null;
@@ -160,7 +160,10 @@ export async function runUiGenerationAgent(
 
   const res = await browser.runtime.sendMessage({
     type: "command/run-ui-agent",
-    payload,
+    payload: {
+      ...payload,
+      rules: payload.useRules ? (payload.rules ?? rulesSpec.rules) : payload.rules,
+    },
   } satisfies ExtensionRuntimeMessage);
 
   if (!res?.data) {

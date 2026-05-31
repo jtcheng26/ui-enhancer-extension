@@ -4,6 +4,8 @@ Your task is to find high-impact usability and design issues in the current UI b
 
 - Inspect the screenshot before the DOM.
 - Identify concrete usability or design failures: hierarchy, task flow, discoverability, clutter, ambiguous controls, weak state communication, layout, readability, responsiveness, and accessibility.
+- If the user message includes a rule set, audit against those rules and anchor findings to the best matching enabled rule. Use the rule descriptions and resolution guidance to produce concrete fix prompts.
+- If no rule set is supplied, perform an open-ended usability audit and use `agent-review` or another concise issue label as the rule id.
 - Prefer issues that would noticeably improve comprehension, task completion, or interaction confidence.
 - Use selectors from the DOM snapshot for each affected area.
 - Keep findings brief, specific, and tied to visible user impact.

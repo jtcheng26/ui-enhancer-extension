@@ -44,7 +44,7 @@ import ExampleMarkup from "@/schema/markup.txt?raw";
 
 // import Raw from "../prompts/temp.txt?raw";
 import { compileSpecStream } from "@json-render/core";
-import rulesSpec from "../prompts/rules.json";
+import rulesSpec from "../prompts/specific-usability-rules.json";
 
 function loadPrompt(template: string, vars: Record<string, string>) {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
@@ -61,7 +61,7 @@ type Shape =
 const MAX_PROMPT_STRING_LENGTH = 240;
 const MAX_PROMPT_ARRAY_ITEMS = 8;
 const MAX_PROMPT_OBJECT_KEYS = 24;
-const MAX_AGENT_DRAFT_RENDERS = 3;
+const MAX_AGENT_DRAFT_RENDERS = 5;
 const MIN_COMPLEX_REVISION_DRAFT_RENDERS = 2;
 const MAX_RENDERED_DRAFT_HTML_LENGTH = 6000;
 const DEFAULT_AGENT_AUDIT_PROMPT = "Fix usability and design issues in the UI";
@@ -345,11 +345,14 @@ function createAgentUserMessage(
   input: UiGenerationAgentCommandPayload,
 ): ModelMessage {
   const prompt = input.prompt.trim() || DEFAULT_AGENT_AUDIT_PROMPT;
+  const mode = getAgentMode(input);
+  const auditRules =
+    mode === "audit" && input.useRules ? (input.rules ?? rulesSpec.rules) : [];
   const text = [
     "User request:",
     prompt,
     "",
-    ...(getAgentMode(input) === "revision"
+    ...(mode === "revision"
       ? [
           "Revision completion requirements:",
           "- Treat every explicit clause in the request as a requirement, including styling, hierarchy, spacing, and interaction changes.",
@@ -358,6 +361,23 @@ function createAgentUserMessage(
           "",
         ]
       : []),
+    ...(mode === "audit" && input.useRules
+      ? [
+          "Audit mode:",
+          "Use the supplied usability rules. Prefer enabled rules and anchor each finding to the best matching rule id.",
+          "Generate concrete findings that could become actionable UI revision tasks. Use each rule's resolutionGuidance when it fits the visible UI.",
+          "",
+          "Rules:",
+          JSON.stringify(auditRules, null, 2),
+          "",
+        ]
+      : mode === "audit"
+        ? [
+            "Audit mode:",
+            "No rule set is enabled. Perform an open-ended usability audit and report only high-impact visible issues.",
+            "",
+          ]
+        : []),
     "",
     "Current page DOM snapshot:",
     input.snapshot?.prompt ?? "(No DOM snapshot was available.)",
@@ -472,6 +492,16 @@ function extractorFromAgentInput(input: AgentCreateExtractorInput) {
       output: "SelectedSection",
     },
     fields: input.fields,
+  };
+}
+
+function emptyExtractorFromRootSelector(rootSelector: string): DOMExtractorSpec {
+  return {
+    root: {
+      selector: rootSelector,
+      output: "SelectedSection",
+    },
+    fields: {},
   };
 }
 
@@ -941,6 +971,7 @@ export class ClientAIProvider implements AIProvider {
       ...messages,
       ...(result.response.messages as ModelMessage[]),
     ];
+    const usage = normalizeTokenUsage(result.totalUsage);
     const content = result.content as any[];
 
     const approvalRequest = content.find(
@@ -961,6 +992,7 @@ export class ClientAIProvider implements AIProvider {
         return {
           status: "done",
           messages: nextMessages,
+          usage,
           text: "No clear usability issues were reported.",
         };
       }
@@ -968,6 +1000,7 @@ export class ClientAIProvider implements AIProvider {
       return {
         status: "needsApproval",
         messages: nextMessages,
+        usage,
         approvalId: approvalRequest.approvalId,
         toolCallId: approvalRequest.toolCall.toolCallId,
         violations,
@@ -990,6 +1023,7 @@ export class ClientAIProvider implements AIProvider {
         return {
           status: "error",
           messages: nextMessages,
+          usage,
           error: parsed.error.issues
             .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
             .join("\n"),
@@ -999,6 +1033,7 @@ export class ClientAIProvider implements AIProvider {
       return {
         status: "needsExtractorResult",
         messages: nextMessages,
+        usage,
         toolCallId: createExtractorCall.toolCallId,
         extractor: extractorFromAgentInput(parsed.data),
       };
@@ -1020,6 +1055,7 @@ export class ClientAIProvider implements AIProvider {
         return {
           status: "error",
           messages: nextMessages,
+          usage,
           error: parsed.error.issues
             .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
             .join("\n"),
@@ -1031,21 +1067,17 @@ export class ClientAIProvider implements AIProvider {
         "createExtractor",
         agentCreateExtractorInputSchema,
       );
-
-      if (!extractorInput) {
-        return {
-          status: "error",
-          messages: nextMessages,
-          error: "The agent submitted a UI draft before creating an extractor.",
-        };
-      }
+      const extractor = extractorInput
+        ? extractorFromAgentInput(extractorInput)
+        : emptyExtractorFromRootSelector(parsed.data.rootSelector);
 
       return {
         status: "needsDraftRender",
         messages: nextMessages,
+        usage,
         toolCallId: renderUiDraftCall.toolCallId,
         kind: "ui",
-        extractor: extractorFromAgentInput(extractorInput),
+        extractor,
         spec: stripHtmlCodeFence(parsed.data.html),
       };
     }
@@ -1066,6 +1098,7 @@ export class ClientAIProvider implements AIProvider {
         return {
           status: "error",
           messages: nextMessages,
+          usage,
           error: parsed.error.issues
             .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
             .join("\n"),
@@ -1077,6 +1110,7 @@ export class ClientAIProvider implements AIProvider {
         return {
           status: "error",
           messages: nextMessages,
+          usage,
           error: css.error ?? "The agent submitted empty CSS.",
         };
       }
@@ -1084,6 +1118,7 @@ export class ClientAIProvider implements AIProvider {
       return {
         status: "needsDraftRender",
         messages: nextMessages,
+        usage,
         toolCallId: renderCssDraftCall.toolCallId,
         kind: "css",
         css: css.css,
@@ -1109,6 +1144,7 @@ export class ClientAIProvider implements AIProvider {
         return {
           status: "error",
           messages: nextMessages,
+          usage,
           error: parsed.error.issues
             .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
             .join("\n"),
@@ -1120,6 +1156,7 @@ export class ClientAIProvider implements AIProvider {
         return {
           status: "error",
           messages: nextMessages,
+          usage,
           error: companionCss.error,
         };
       }
@@ -1134,6 +1171,7 @@ export class ClientAIProvider implements AIProvider {
           return {
             status: "error",
             messages: nextMessages,
+            usage,
             error: parsedCss.error.issues
               .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
               .join("\n"),
@@ -1145,6 +1183,7 @@ export class ClientAIProvider implements AIProvider {
           return {
             status: "error",
             messages: nextMessages,
+            usage,
             error: css.error ?? "The agent submitted empty CSS.",
           };
         }
@@ -1157,20 +1196,16 @@ export class ClientAIProvider implements AIProvider {
         "createExtractor",
         agentCreateExtractorInputSchema,
       );
-
-      if (!extractorInput) {
-        return {
-          status: "error",
-          messages: nextMessages,
-          error: "The agent submitted UI before creating an extractor.",
-        };
-      }
+      const extractor = extractorInput
+        ? extractorFromAgentInput(extractorInput)
+        : emptyExtractorFromRootSelector(parsed.data.rootSelector);
 
       return {
         status: "readyToInject",
         messages: nextMessages,
+        usage,
         toolCallId: injectUiCall.toolCallId,
-        extractor: extractorFromAgentInput(extractorInput),
+        extractor,
         spec: stripHtmlCodeFence(parsed.data.html),
         css: cssForInjection,
       };
@@ -1183,6 +1218,7 @@ export class ClientAIProvider implements AIProvider {
         return {
           status: "error",
           messages: nextMessages,
+          usage,
           error: parsed.error.issues
             .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
             .join("\n"),
@@ -1194,6 +1230,7 @@ export class ClientAIProvider implements AIProvider {
         return {
           status: "error",
           messages: nextMessages,
+          usage,
           error: css.error ?? "The agent submitted empty CSS.",
         };
       }
@@ -1201,6 +1238,7 @@ export class ClientAIProvider implements AIProvider {
       return {
         status: "readyToInjectCss",
         messages: nextMessages,
+        usage,
         toolCallId: injectCssCall.toolCallId,
         css: css.css,
       };
@@ -1209,6 +1247,7 @@ export class ClientAIProvider implements AIProvider {
     return {
       status: "done",
       messages: nextMessages,
+      usage,
       text: result.text,
     };
   }

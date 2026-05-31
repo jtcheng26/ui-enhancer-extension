@@ -82,8 +82,10 @@ export interface CreateUiCommandPayload {
 
 export interface UsabilityRule {
   id: string;
+  category?: string;
   title: string;
   description: string;
+  resolutionGuidance?: string;
   enabled: boolean;
 }
 
@@ -144,6 +146,8 @@ export interface UiGenerationAgentCommandPayload {
   prompt: string;
   mode?: UiGenerationAgentMode;
   source: AugmentationRequest["source"];
+  useRules?: boolean;
+  rules?: UsabilityRule[];
   snapshot?: SelectedDomTreeSnapshot;
   screenshot?: string;
   messages?: ModelMessage[];
