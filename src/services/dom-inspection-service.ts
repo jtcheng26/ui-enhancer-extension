@@ -62,6 +62,13 @@ const MAX_MARKUP_STYLE_SNAPSHOTS = 16;
 const MAX_MARKUP_STYLE_JSON_LENGTH = 5000;
 const MAX_MARKUP_DESCENDANTS = 40;
 const SCREENSHOT_SETTLE_DELAY_MS = 200;
+const REMOVED_SVG_PATH_DATA = "removed";
+
+const SCRIPT_TAG_PATTERN = /<script\b[^>]*(?:\/>|>[\s\S]*?<\/script\s*>)/gi;
+const SCRIPT_TAG_WITH_ESCAPED_CLOSE_PATTERN =
+  /<script\b[^>]*>[\s\S]*?(?:\\x3c\s*\/script\s*>|\\u003c\s*\/script\s*>|&lt;\s*\/script\s*&gt;)/gi;
+const UNCLOSED_SCRIPT_TAG_PATTERN = /<script\b[^>]*>[\s\S]*$/i;
+const SVG_PATH_DATA_PATTERN = /(<(?:path|glyph)\b[^>]*\sd\s*=\s*)(["'])([\s\S]*?)\2/gi;
 
 function isExtensionUiOrUnsafeElement(element: Element): boolean {
   return (
@@ -71,8 +78,68 @@ function isExtensionUiOrUnsafeElement(element: Element): boolean {
   );
 }
 
+export function removeScriptTagsFromHtml(html: string): string {
+  return html
+    .replace(SCRIPT_TAG_PATTERN, "")
+    .replace(SCRIPT_TAG_WITH_ESCAPED_CLOSE_PATTERN, "")
+    .replace(UNCLOSED_SCRIPT_TAG_PATTERN, "");
+}
+
+export function trimSvgPathDataFields(html: string): string {
+  return html.replace(
+    SVG_PATH_DATA_PATTERN,
+    `$1$2${REMOVED_SVG_PATH_DATA}$2`,
+  );
+}
+
+function removeScriptElements(root: ParentNode): void {
+  const elements =
+    root instanceof Element
+      ? [root, ...Array.from(root.querySelectorAll("script"))]
+      : Array.from(root.querySelectorAll("script"));
+
+  for (const element of elements) {
+    if (!element.matches("script")) {
+      continue;
+    }
+
+    element.remove();
+  }
+}
+
+function trimSvgPathDataAttributes(root: ParentNode): void {
+  const elements =
+    root instanceof Element
+      ? [root, ...Array.from(root.querySelectorAll("[d]"))]
+      : Array.from(root.querySelectorAll("[d]"));
+
+  for (const element of elements) {
+    if (!element.hasAttribute("d")) {
+      continue;
+    }
+
+    if (
+      element.namespaceURI === "http://www.w3.org/2000/svg" ||
+      element.matches("path, glyph")
+    ) {
+      element.setAttribute("d", REMOVED_SVG_PATH_DATA);
+    }
+  }
+}
+
+export function sanitizeOuterHtmlSnapshot(element: HTMLElement): string {
+  const clone = element.cloneNode(true) as HTMLElement;
+  removeScriptElements(clone);
+  trimSvgPathDataAttributes(clone);
+
+  return trimSvgPathDataFields(removeScriptTagsFromHtml(clone.outerHTML));
+}
+
 function sanitizeMarkupClone(root: HTMLElement): HTMLElement {
   const clone = root.cloneNode(true) as HTMLElement;
+  removeScriptElements(clone);
+  trimSvgPathDataAttributes(clone);
+
   const allElements = [clone, ...Array.from(clone.querySelectorAll("*"))];
   let keptDescendants = 0;
 
@@ -200,16 +267,17 @@ export function inspectSelectedDomTree(
   }
 
   const tree = serializeAccessibilityTree(element);
+  const prompt = sanitizeOuterHtmlSnapshot(element);
 
   const snapshot: SelectedDomTreeSnapshot = {
     selectedElementId: selectedElement.id,
     selector: selectedElement.selector,
     pageUrl: selectedElement.pageUrl,
     tree,
-    prompt: root.querySelector(selectedElement.selector)?.outerHTML || "",
+    prompt,
   };
 
-  console.log(root.querySelector(selectedElement.selector)?.outerHTML || "");
+  console.log(prompt);
 
   console.log(formatSnapshotPrompt(selectedElement.selector, tree));
   logger.info(
@@ -244,7 +312,9 @@ export function inspectSelectedMarkupContext(
 
   return {
     selector: selectedElement.selector,
-    html: clipHtmlSnippet(clone.outerHTML),
+    html: clipHtmlSnippet(
+      trimSvgPathDataFields(removeScriptTagsFromHtml(clone.outerHTML)),
+    ),
     styles: collectStyleSnapshots(element),
   };
 }
@@ -262,15 +332,16 @@ export function inspectPageDomTree(
 
   const tree = serializeAccessibilityTree(element);
   const selector = "body";
+  const prompt = sanitizeOuterHtmlSnapshot(element);
 
-  console.log(element.outerHTML);
+  console.log(prompt);
 
   return {
     selectedElementId: "page-root",
     selector,
     pageUrl: window.location.href,
     tree,
-    prompt: element?.outerHTML || "",
+    prompt,
   };
 }
 

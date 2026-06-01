@@ -1,3 +1,4 @@
+import { sanitizeOuterHtmlSnapshot } from "@/services/dom-inspection-service";
 import "../../assets/tailwind.css";
 
 import { initializeContentPrototype } from "../content/bootstrap";
@@ -7,7 +8,12 @@ export default defineContentScript({
   cssInjectionMode: "ui",
   matches: ["<all_urls>"],
   main(ctx) {
-    // console.log(JSON.parse(uh));
+    // setTimeout(() => {
+    //   console.log(
+    //     "HTML SNAPSHOT SIZE",
+    //     sanitizeOuterHtmlSnapshot(document.body),
+    //   );
+    // }, 5000);
     void initializeContentPrototype(ctx);
   },
 });

@@ -19,7 +19,8 @@ import {
 } from "./dom-inspection-service";
 import { DOMExtractorSpec, ExtractedValue } from "./dom-extractor";
 import { RenderSystemId } from "./renderer/renderer";
-import rulesSpec from "../ai/prompts/specific-usability-rules.json";
+// import rulesSpec from "../ai/prompts/specific-usability-rules.json";
+import rulesSpec from "../ai/prompts/dark-pattern-usability-rules.json";
 
 interface SubmitAugmentationRequestOptions {
   selectedElement?: SelectedElement | null;

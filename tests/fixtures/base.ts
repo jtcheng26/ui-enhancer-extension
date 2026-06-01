@@ -19,6 +19,9 @@ export const baseTest = base.extend<{
         `--disable-extensions-except=${pathToExtension}`,
         `--load-extension=${pathToExtension}`,
       ],
+      viewport: {
+        "width": 375, "height": 812
+      }
     });
     // for local dev
     await context.grantPermissions(["local-network-access"]);

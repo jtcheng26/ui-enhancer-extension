@@ -44,7 +44,8 @@ import ExampleMarkup from "@/schema/markup.txt?raw";
 
 // import Raw from "../prompts/temp.txt?raw";
 import { compileSpecStream } from "@json-render/core";
-import rulesSpec from "../prompts/specific-usability-rules.json";
+// import rulesSpec from "../prompts/specific-usability-rules.json";
+import rulesSpec from "../prompts/dark-pattern-usability-rules.json";
 
 function loadPrompt(template: string, vars: Record<string, string>) {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");

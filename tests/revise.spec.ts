@@ -1,31 +1,59 @@
 import { baseTest, expect } from "./fixtures/base";
 import fs from "node:fs/promises";
+import fssync from "node:fs";
+import path from "node:path";
 
-const testCases = [
-  {
-    name: "red top bar",
-    inputFile: "tests/inputs/test.html",
-    prompt: "Make the top bar have a red background",
-    outputPrefix: "results/red-top-bar",
-  },
-  {
-    name: "pink top bar",
-    inputFile: "tests/inputs/test.html",
-    prompt: "Make the top bar have a pink background",
-    outputPrefix: "results/pink-top-bar",
-  },
-];
+const CWD = process.cwd();
+const pathPrefix = `file://${CWD}`;
+const dataset = "dataset_bad";
+const datasetRoot = path.join(CWD, "tests", dataset);
+
+const testCases = fssync
+  .readdirSync(datasetRoot, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => {
+    const name = entry.name;
+    const taskPath = path.join(datasetRoot, name, "Task.txt");
+    const prompt = fssync.readFileSync(taskPath, "utf8").trim();
+
+    return {
+      name,
+      inputFile: `${pathPrefix}/tests/${dataset}/${name}/Before/index.html`,
+      prompt,
+      outputPrefix: `tests/${dataset}/${name}/After`,
+    };
+  });
 
 for (const tc of testCases) {
   baseTest(tc.name, async ({ page }) => {
     await page.goto(tc.inputFile);
     await page.locator("ai-ui-floating-popup").waitFor({ state: "attached" });
-    await page.getByTestId("agent-skip-approvals-checkbox").check();
-    await page.getByTestId("agent-prompt-input").fill(tc.prompt);
-    await page.getByTestId("agent-flow-button").click();
+    // up to 3 trials
+    for (let i = 0; i < 3; i++) {
+      await page.getByTestId("agent-skip-approvals-checkbox").check();
+      await page.getByTestId("agent-prompt-input").fill(tc.prompt);
+      await page.getByTestId("agent-flow-button").click();
+
+      await expect(page.getByText("Agent is working")).toBeAttached({
+        timeout: 60 * 1000,
+      });
+
+      await expect(page.getByTestId("agent-history")).toBeVisible({
+        timeout: 5 * 60 * 1000,
+      });
+      try {
+        await expect(page.getByTestId("failed-gen")).toBeVisible({
+          timeout: 2000,
+        });
+      } catch {
+        break;
+      }
+    }
+
     await expect(page.getByTestId("agent-history")).toContainText(/Hide|Show/, {
       timeout: 120_000,
     });
+
     await page.getByTestId("ai-ui-close-popup").click();
 
     const agentLogs = await page.evaluate(() =>
@@ -43,7 +71,7 @@ for (const tc of testCases) {
     );
 
     await page.screenshot({
-      path: `${tc.outputPrefix}/final-page.png`,
+      path: `${tc.outputPrefix}/screenshot.png`,
       fullPage: true,
     });
 
@@ -89,6 +117,6 @@ for (const tc of testCases) {
       return `<!doctype html>\n${serializeNode(document.documentElement)}`;
     });
 
-    await fs.writeFile(`${tc.outputPrefix}/final-page.html`, html, "utf8");
+    await fs.writeFile(`${tc.outputPrefix}/index.html`, html, "utf8");
   });
 }
